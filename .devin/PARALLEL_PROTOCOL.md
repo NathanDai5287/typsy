@@ -19,16 +19,20 @@ You are one of several Devin instances working on this repo simultaneously, each
 - Touch the minimum number of files needed. Do NOT do drive-by refactors, formatting passes, or import reorganizations outside your task.
 - After completing each change, post a one-sentence reminder of what just changed (e.g. "Added is_active flag to user_layout_progress and wired the toggle into LayoutsPage") and then ask the user: "Want me to commit and push this?" Do not run `git commit` or `git push` until the user says yes. When approved, do all three of the following back-to-back: (1) commit with `[<slug>]` prefix, (2) push to `origin/devin/<slug>`, (3) `scripts/devin-locks.sh release <slug>` to free your claim. The lock represents "work in flight in this worktree" — once your changes are on the remote, the lock is no longer needed. `release` is idempotent, so subsequent CI-fix pushes don't need to re-claim.
 - If tests fail on `main` (not caused by you), STOP and report — do not "fix" unrelated breakage.
-- CI runs `pnpm install --frozen-lockfile + pnpm build + pnpm test` automatically on every PR push via `.github/workflows/ci.yml`. If CI fails, the workflow comments with a link to the run logs and applies the `status: failing` label. Fix the failure and push again — do not request `devin-review` until CI is green.
+- Two workflows run automatically on every PR push: `.github/workflows/ci.yml` (`pnpm install --frozen-lockfile + pnpm build + pnpm test`) and `.github/workflows/ai-review.yml` (an AI reads the diff and posts an `APPROVE` or `REQUEST_CHANGES` review). On AI `APPROVE`, the AI workflow calls `gh pr merge --auto`, which adds the PR to GitHub's merge queue. The queue then re-runs CI on `main + previously-queued PRs + this PR` and merges only if the combined state is green. If the AI requests changes, address the concerns and push again — the AI re-reviews automatically. **Do not click Approve yourself or run `gh pr merge`** — both are automatic.
 
 ## Shutdown sequence (do these IN ORDER when the task is complete)
 1. Run the verification sequence from `.devin/knowledge.md`.
 2. If you learned something future instances should know (new gotcha, missing convention, wrong path), append a note to `.devin/knowledge.md` as part of your PR.
-3. Push the branch and open a DRAFT PR against `main` titled `[<slug>] <one-line summary>`. CI runs automatically on every push:
-   - Do NOT apply the `devin-review` label yourself. The human applies it once they've reviewed the diff; that's their explicit "merge it" signal.
-   - Do NOT mark the PR ready, run `gh pr merge`, or rebase `main` yourself. Once a human applies `devin-review` and CI is green, the workflow marks it ready, enables auto-merge (merge commit), and deletes the branch.
-   - If CI is red, the workflow comments with the failing run URL and applies `status: failing`. Fix and re-push; do not ask for `devin-review` until green.
-   - If the workflow detects a merge conflict at auto-merge time, it removes `devin-review`, applies `merge-conflict`, and asks you to rebase. Do that, push, and the human can re-apply `devin-review`.
+3. Push the branch and open a regular PR (NOT draft) against `main` titled `[<slug>] <one-line summary>`. From here everything is automatic:
+   - **CI** runs build + test on the head commit.
+   - **AI review** reads the diff and submits an `APPROVE` or `REQUEST_CHANGES` review.
+   - On AI `APPROVE`, the AI workflow calls `gh pr merge --auto`, which adds the PR to GitHub's merge queue.
+   - The merge queue re-runs CI on `main + previously-queued PRs + this PR`. If green there too, the PR is merged (merge commit) and the branch deleted.
+   - If CI is red on the PR head, fix and push again — the AI re-reviews on every push.
+   - If the AI requests changes, address its concerns and push; the AI re-reviews automatically.
+   - If the merge queue's combined-state CI fails (semantic conflict with a sibling PR), GitHub kicks the PR out and notifies. Rebase against `main`, push, and the cycle restarts.
+   - Do NOT click Approve, run `gh pr merge`, or mark anything yourself. The human gate was your "yes" at commit/push time.
 4. Your lock should already be released (it gets released in the commit/push step above). Run `scripts/devin-locks.sh list` to confirm — if your slug is still listed (e.g. you abandoned the task without ever pushing), run `scripts/devin-locks.sh release <slug>`. Release is idempotent.
 
 ## If you crash or get interrupted

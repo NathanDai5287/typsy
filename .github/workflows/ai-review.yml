@@ -1,0 +1,144 @@
+name: AI review
+
+# Reviews every PR push using GitHub Models (free for public repos).
+# The AI's APPROVE counts as the required PR review for branch protection,
+# and on APPROVE the workflow calls `gh pr merge --auto` to add the PR to
+# the merge queue. On REQUEST_CHANGES the PR is blocked until the next
+# push, which re-triggers the review.
+#
+# To override (e.g. AI is wrong): a human can dismiss the AI review via
+# `gh pr review --dismiss` or the GitHub UI, then click Merge themselves.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  models: read
+
+# Cancel an in-flight review when a new push lands — last commit wins.
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: AI review
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Build prompts
+        id: prompts
+        run: |
+          # Cap the diff at ~80K chars so it fits comfortably in the
+          # model's context window (gpt-4o-mini has 128K tokens; 80K
+          # chars is roughly 20K tokens, leaving plenty of headroom).
+          DIFF=$(gh pr diff "$PR" | head -c 80000)
+          DIFF_SIZE=${#DIFF}
+          TITLE=$(gh pr view "$PR" --json title -q .title)
+
+          {
+            echo "size=$DIFF_SIZE"
+            echo "title=$TITLE"
+            echo "diff<<DIFF_EOF"
+            echo "$DIFF"
+            echo "DIFF_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Skip if diff is empty
+        if: steps.prompts.outputs.size == '0'
+        run: |
+          gh pr review "$PR" --comment --body "Diff is empty — nothing for AI to review."
+
+      - name: Run AI review
+        if: steps.prompts.outputs.size != '0'
+        id: ai
+        uses: actions/ai-inference@v1
+        with:
+          model: openai/gpt-4o-mini
+          system-prompt: |
+            You are a code reviewer for typsy, a TypeScript pnpm monorepo:
+              - apps/web — Vite + React 18 + Tailwind frontend.
+              - apps/server — Express + better-sqlite3 backend.
+              - packages/shared — pure-function library (no I/O, no globals other than Math.random which is injectable as `rng`).
+
+            Project conventions you should enforce:
+              - ESM throughout. `.js` extensions on relative imports inside apps/server (NodeNext); `.ts`/`.tsx` extensions in apps/web (Bundler). Don't "fix" the inconsistency — it's deliberate per each app's tsconfig.
+              - All HTTP from the frontend goes through `apps/web/src/lib/api.ts`.
+              - SQL migrations in `apps/server/src/db/migrations/` are append-only. NEVER edit a merged migration; add a new `NNN_*.sql` file.
+              - `KeyboardEvent.code` (not `key`) is the source of truth for typing — code is layout-independent.
+              - Pure-function libs in packages/shared/ should accept `rng` for determinism in tests.
+              - Built-in layouts (QWERTY/Colemak/Graphite) cannot be deleted; that's enforced in apps/server/src/routes/layouts.ts.
+              - Tailwind theme is custom Catppuccin Mocha — use named tokens, not raw hex colors.
+
+            Review the diff for: bugs and logic errors; type errors that tsc might miss; deviations from the conventions above; missing tests for new logic in packages/shared/ or apps/web/; security issues (SQL injection, secret leaks, XSS).
+
+            Output exactly this format. Do not include any preamble before "VERDICT:".
+
+            VERDICT: APPROVE
+
+            <one-paragraph summary; brief is fine>
+
+            <optional: bullet list of nits>
+
+            OR:
+
+            VERDICT: REQUEST_CHANGES
+
+            <one-paragraph summary>
+
+            Concerns:
+            - file/path.ts:line — what's wrong, how to fix.
+            - ...
+
+            APPROVE means "ship it"; nits are fine. Use REQUEST_CHANGES for real bugs, security issues, convention violations, or missing tests on logic in packages/shared/.
+          prompt: |
+            PR title: ${{ steps.prompts.outputs.title }}
+
+            Diff:
+
+            ```diff
+            ${{ steps.prompts.outputs.diff }}
+            ```
+
+            Review per the system prompt.
+
+      - name: Parse verdict and post review
+        if: steps.prompts.outputs.size != '0'
+        env:
+          AI_RESPONSE: ${{ steps.ai.outputs.response }}
+        run: |
+          # Extract the first VERDICT: line and everything after it.
+          VERDICT=$(echo "$AI_RESPONSE" | grep -m1 -E '^VERDICT:' | sed 's/^VERDICT: *//' | tr -d '\r' | awk '{print $1}')
+          BODY=$(echo "$AI_RESPONSE" | awk 'BEGIN{found=0} /^VERDICT:/{found=1; next} found{print}' | sed '/./,$!d')
+          if [ -z "$BODY" ]; then
+            BODY="$AI_RESPONSE"
+          fi
+
+          # Always log the AI's verdict + first 1KB of body for debugging.
+          echo "::notice::AI verdict: ${VERDICT:-UNPARSED}"
+          echo "::group::AI response (truncated)"
+          echo "$AI_RESPONSE" | head -c 1024
+          echo "::endgroup::"
+
+          case "$VERDICT" in
+            APPROVE)
+              gh pr review "$PR" --approve --body "$BODY"
+              # Enqueue the PR. With branch protection requiring merge queue,
+              # `--auto` queues; without, it merges directly when checks pass.
+              gh pr merge "$PR" --auto --merge --delete-branch
+              ;;
+            REQUEST_CHANGES)
+              gh pr review "$PR" --request-changes --body "$BODY"
+              ;;
+            *)
+              gh pr review "$PR" --comment --body "AI review (verdict line missing or malformed):
+
+              $AI_RESPONSE"
+              ;;
+          esac
