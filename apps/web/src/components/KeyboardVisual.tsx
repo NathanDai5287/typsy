@@ -1,4 +1,5 @@
 import type { FingerLabel, KeyPosition } from '@typsy/shared';
+import { posKey } from '@typsy/shared';
 import { FINGER_BG } from '../lib/finger-colors.ts';
 
 export interface KeyboardVisualProps {
@@ -7,8 +8,12 @@ export interface KeyboardVisualProps {
   unlocked?: ReadonlySet<string>;
   /** Char that is expected next; gets a bright outline. */
   nextChar?: string | null;
-  /** Optional fingering override (char → FingerLabel). Falls back to the position's `finger`. */
-  fingerOverrides?: Record<string, FingerLabel>;
+  /**
+   * Layout-independent fingering map keyed by physical position
+   * (`posKey(pos)` → `"row,col"`). Falls back to the position's column
+   * default (`KeyPosition.finger`).
+   */
+  posFingerMap?: Record<string, FingerLabel>;
   /**
    * Per-character muscle-memory metric used to fade keys as they're learned.
    * Map char → number of correct attempts (we'll fade as this grows).
@@ -31,7 +36,7 @@ export default function KeyboardVisual({
   positions,
   unlocked,
   nextChar,
-  fingerOverrides,
+  posFingerMap,
   charHits,
   fadeStrength = 1.0,
   heat,
@@ -54,7 +59,7 @@ export default function KeyboardVisual({
           {row.map((pos) => {
             const isUnlocked = !unlocked || unlocked.has(pos.char);
             const isNext = nextChar === pos.char;
-            const finger = fingerOverrides?.[pos.char] ?? pos.finger;
+            const finger = posFingerMap?.[posKey(pos)] ?? pos.finger;
             const bg = isUnlocked ? FINGER_BG[finger] : 'bg-gray-800';
             // Catppuccin's pastel finger fills want dark text for contrast;
             // locked keys keep light text on the dark surface.

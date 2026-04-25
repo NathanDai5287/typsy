@@ -1,4 +1,5 @@
 import type { FingerLabel, KeyPosition } from './types.js';
+import { posKey } from './layouts.js';
 
 /**
  * Per-bigram classification used by the cost function (spec §6.7).
@@ -69,16 +70,19 @@ const FINGER_HOME_COL: Record<FingerLabel, number> = {
 };
 
 /**
- * Build a fast char → KeyPosition lookup with the per-key finger
- * (override-aware). Pre-build once per layout for performance.
+ * Build a fast char → KeyPosition lookup with the per-key finger resolved.
+ * The fingering map is keyed by physical position (`"row,col"`) — not by
+ * character — so the same user-level map applies across every layout.
+ * Falls back to the layout's column-based default for unmapped positions.
+ * Pre-build once per layout for performance.
  */
 export function buildLayoutIndex(
   positions: readonly KeyPosition[],
-  fingeringOverride?: Record<string, FingerLabel>,
+  posFingerMap?: Record<string, FingerLabel>,
 ): Map<string, KeyPosition & { finger: FingerLabel }> {
   const map = new Map<string, KeyPosition & { finger: FingerLabel }>();
   for (const p of positions) {
-    const finger = fingeringOverride?.[p.char] ?? p.finger;
+    const finger = posFingerMap?.[posKey(p)] ?? p.finger;
     map.set(p.char, { ...p, finger });
   }
   return map;

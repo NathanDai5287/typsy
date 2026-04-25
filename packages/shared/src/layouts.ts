@@ -60,11 +60,20 @@ function buildKeyPositions(grid: LayoutGrid): KeyPosition[] {
   return positions;
 }
 
+/**
+ * Canonical `"row,col"` string used as the key for layout-independent
+ * fingering maps. Stable, JSON-safe, and reused everywhere a finger
+ * assignment is bound to a physical key position rather than a character.
+ */
+export function posKey(pos: { row: number; col: number }): string {
+  return `${pos.row},${pos.col}`;
+}
+
 /** Builds a row/col → char lookup map from parsed KeyPosition[]. */
 export function buildPositionCharMap(positions: KeyPosition[]): Map<string, string> {
   const map = new Map<string, string>();
   for (const pos of positions) {
-    map.set(`${pos.row},${pos.col}`, pos.char);
+    map.set(posKey(pos), pos.char);
   }
   return map;
 }

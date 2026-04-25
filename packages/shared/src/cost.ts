@@ -40,11 +40,11 @@ export interface CostOptions {
 
 export function layoutCost(
   positions: readonly KeyPosition[],
-  fingeringOverride: Record<string, import('./types.js').FingerLabel> | undefined,
+  posFingerMap: Record<string, import('./types.js').FingerLabel> | undefined,
   options: CostOptions = {},
 ): CostBreakdown {
   const { userIndex, missFloor = 0.05, includeTrigrams = true } = options;
-  const index = buildLayoutIndex(positions, fingeringOverride);
+  const index = buildLayoutIndex(positions, posFingerMap);
 
   return computeCost(index, userIndex, missFloor, includeTrigrams);
 }

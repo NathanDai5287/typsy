@@ -234,9 +234,9 @@ function main(): void {
       const initialUnlocked = pickInitialSubset(positions);
       db.prepare(
         `INSERT INTO user_layout_progress
-           (user_id, layout_id, unlocked_keys_json, fingering_map_json,
+           (user_id, layout_id, unlocked_keys_json,
             current_mode, last_session_at)
-         VALUES (?, ?, ?, '{}', 'flow', ?)`,
+         VALUES (?, ?, ?, 'flow', ?)`,
       ).run(
         SYNTHETIC_USER_ID,
         layout.id,

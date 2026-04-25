@@ -1,6 +1,7 @@
 import type { FingerLabel, KeyPosition, Session, NgramStat } from './types.js';
 import { CHARS_PER_WORD } from './constants.js';
 import { smoothedAccuracy, smoothedErrorRate } from './bayesian.js';
+import { posKey } from './layouts.js';
 
 // ─── Per-finger aggregation ────────────────────────────────────────────────
 
@@ -22,17 +23,18 @@ const FINGER_ORDER: FingerLabel[] = [
 ];
 
 /**
- * Build a `char → finger` lookup. Prefers an explicit `fingeringOverride`
- * (i.e. the user's onboarding map) and falls back to the layout's default
- * column-based finger assignment.
+ * Build a `char → finger` lookup for the given layout. The user's fingering
+ * is keyed by physical position (`"row,col"`), not by character — that's
+ * what makes it layout-independent. Unmapped positions fall back to the
+ * layout's column-based default (`KeyPosition.finger`).
  */
 export function buildFingerMap(
   positions: readonly KeyPosition[],
-  fingeringOverride?: Record<string, FingerLabel>,
+  posFingerMap?: Record<string, FingerLabel>,
 ): Map<string, FingerLabel> {
   const map = new Map<string, FingerLabel>();
   for (const pos of positions) {
-    map.set(pos.char, fingeringOverride?.[pos.char] ?? pos.finger);
+    map.set(pos.char, posFingerMap?.[posKey(pos)] ?? pos.finger);
   }
   return map;
 }

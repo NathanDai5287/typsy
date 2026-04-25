@@ -4,10 +4,12 @@ import type {
   LayoutSummary,
   OnboardingPayload,
   ProgressUpdatePayload,
+  UserFingeringPayload,
   SessionPayload,
   Session,
   NgramBatchPayload,
   NgramStat,
+  User,
   UserLayoutProgress,
   SetActiveLayoutPayload,
 } from '@typsy/shared';
@@ -66,6 +68,17 @@ export function postProgressUpdate(
   payload: ProgressUpdatePayload,
 ): Promise<UserLayoutProgress> {
   return request<UserLayoutProgress>('/user/progress', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Replace the user's layout-independent fingering map. The body is keyed by
+ * physical position (`"row,col"`), so the same map applies to every layout.
+ */
+export function postUserFingering(payload: UserFingeringPayload): Promise<User> {
+  return request<User>('/user/fingering', {
     method: 'POST',
     body: JSON.stringify(payload),
   });

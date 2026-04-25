@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchLayouts, postOnboarding } from '../lib/api.ts';
+import { fetchLayouts, postOnboarding, postUserFingering } from '../lib/api.ts';
 import type { Layout, KeyPosition, FingerLabel, UserResponse } from '@typsy/shared';
 import FingeringEditor from '../components/FingeringEditor.tsx';
 
@@ -55,7 +55,7 @@ function LayoutCard({ layout, selected, onSelect }: LayoutCardProps) {
 
 interface OnboardingFingeringStepProps {
   layout: Layout;
-  onSave: (fingeringMapJson: string) => void;
+  onSave: (posFingeringMapJson: string) => void;
   isSaving: boolean;
 }
 
@@ -68,7 +68,7 @@ function OnboardingFingeringStep({ layout, onSave, isSaving }: OnboardingFingeri
   return (
     <FingeringEditor
       positions={positions}
-      onSave={(fingerMap: Record<string, FingerLabel>) => onSave(JSON.stringify(fingerMap))}
+      onSave={(posFingerMap: Record<string, FingerLabel>) => onSave(JSON.stringify(posFingerMap))}
       isSaving={isSaving}
       saveLabel="Save and start"
       savingLabel="Saving…"
@@ -124,7 +124,17 @@ export default function OnboardingPage() {
   }, [handleStep1Key]);
 
   const mutation = useMutation({
-    mutationFn: postOnboarding,
+    mutationFn: async (input: {
+      layout_id: number;
+      fingering_map_json: string;
+    }) => {
+      // Save the user-level fingering first so the response from
+      // onboarding picks it up via the SELECT * inside that handler.
+      // Both endpoints touch only the current user's rows; ordering is
+      // about user-visible state, not concurrency.
+      await postUserFingering({ fingering_map_json: input.fingering_map_json });
+      return postOnboarding({ layout_id: input.layout_id });
+    },
     onSuccess: (response) => {
       // Seed the user query synchronously so App.tsx sees layout_progress
       // populated before we navigate. Otherwise the redirect at "/" would

@@ -4,7 +4,7 @@ import {
   buildLayoutIndex,
   trigramRedirectPenalty,
 } from './difficulty.js';
-import { LAYOUT_DEFINITIONS } from './layouts.js';
+import { LAYOUT_DEFINITIONS, posKey } from './layouts.js';
 import type { KeyPosition } from './types.js';
 
 function loadIndex(name: string) {
@@ -124,10 +124,13 @@ describe('trigramRedirectPenalty', () => {
 });
 
 describe('layout indexing', () => {
-  it('respects fingering override', () => {
+  it('respects position-keyed fingering override', () => {
+    // Position-keyed (not char-keyed) so the same map applies across layouts.
+    // QWERTY home-row col 0 is 'a'; reassign that physical key to right_pinky.
     const def = LAYOUT_DEFINITIONS.find((d) => d.name === 'QWERTY')!;
     const positions = JSON.parse(def.key_positions_json) as KeyPosition[];
-    const idx = buildLayoutIndex(positions, { a: 'right_pinky' });
+    const aPos = positions.find((p) => p.char === 'a')!;
+    const idx = buildLayoutIndex(positions, { [posKey(aPos)]: 'right_pinky' });
     expect(idx.get('a')!.finger).toBe('right_pinky');
     expect(idx.get('s')!.finger).toBe('left_ring'); // unchanged
   });

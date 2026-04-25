@@ -1,4 +1,4 @@
-import type { KeyPosition } from './types.js';
+import type { FingerLabel, KeyPosition } from './types.js';
 import { buildLayoutIndex } from './difficulty.js';
 import { computeCost, type CostBreakdown } from './cost.js';
 import type { NgramIndex } from './ngramStats.js';
@@ -7,6 +7,13 @@ export interface AnnealOptions {
   positions: readonly KeyPosition[];
   /** User stats for personalized cost weighting (optional). */
   userIndex?: NgramIndex;
+  /**
+   * Layout-independent fingering map keyed by `posKey(pos)` (`"row,col"`).
+   * Optional — falls back to column-based defaults. Because it's keyed by
+   * physical position, the same map applies even after the optimizer
+   * reshuffles characters.
+   */
+  posFingerMap?: Record<string, FingerLabel>;
   /** Number of swap iterations. Default 2000. */
   iterations?: number;
   /** Starting temperature. Default 0.5. */
@@ -57,6 +64,7 @@ export interface AnnealResult {
 export function anneal({
   positions,
   userIndex,
+  posFingerMap,
   iterations = 2000,
   startTemp = 0.5,
   endTemp = 0.005,
@@ -72,7 +80,7 @@ export function anneal({
     }
   }
   if (swappable.length < 2) {
-    const idx = buildLayoutIndex(positions);
+    const idx = buildLayoutIndex(positions, posFingerMap);
     const cost = computeCost(idx, userIndex, missFloor, true);
     return {
       bestPositions: positions.slice(),
@@ -83,7 +91,7 @@ export function anneal({
     };
   }
 
-  const originalIdx = buildLayoutIndex(positions);
+  const originalIdx = buildLayoutIndex(positions, posFingerMap);
   const originalCost = computeCost(originalIdx, userIndex, missFloor, true);
 
   let current = positions.slice();
@@ -106,7 +114,7 @@ export function anneal({
     } while (b === a);
 
     const candidate = swappedPositions(current, a, b);
-    const candidateIdx = buildLayoutIndex(candidate);
+    const candidateIdx = buildLayoutIndex(candidate, posFingerMap);
     const candidateCost = computeCost(candidateIdx, userIndex, missFloor, true);
     const delta = candidateCost.total - currentCost;
 
@@ -164,6 +172,7 @@ export function bestSingleSwap(opts: AnnealOptions): AnnealResult {
   const {
     positions,
     userIndex,
+    posFingerMap,
     swappableChars,
     missFloor = 0.05,
   } = opts;
@@ -175,7 +184,7 @@ export function bestSingleSwap(opts: AnnealOptions): AnnealResult {
     }
   }
 
-  const originalIdx = buildLayoutIndex(positions);
+  const originalIdx = buildLayoutIndex(positions, posFingerMap);
   const originalCost = computeCost(originalIdx, userIndex, missFloor, true);
 
   let bestPositions: KeyPosition[] = positions.slice();
@@ -185,7 +194,7 @@ export function bestSingleSwap(opts: AnnealOptions): AnnealResult {
   for (let i = 0; i < swappable.length; i++) {
     for (let j = i + 1; j < swappable.length; j++) {
       const candidate = swappedPositions(positions, swappable[i], swappable[j]);
-      const idx = buildLayoutIndex(candidate);
+      const idx = buildLayoutIndex(candidate, posFingerMap);
       const cost = computeCost(idx, userIndex, missFloor, true);
       if (cost.total < bestTotal) {
         bestPositions = candidate;
