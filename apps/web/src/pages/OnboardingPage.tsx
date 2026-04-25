@@ -3,16 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchLayouts, postOnboarding } from '../lib/api.ts';
 import type { Layout, KeyPosition, FingerLabel } from '@typsy/shared';
-import { COL_TO_FINGER } from '@typsy/shared';
-import { FINGER_BG as FINGER_COLORS, FINGER_LABELS } from '../lib/finger-colors.ts';
-
-function buildDefaultFingeringMap(positions: KeyPosition[]): Record<string, FingerLabel> {
-  const map: Record<string, FingerLabel> = {};
-  for (const pos of positions) {
-    map[pos.char] = COL_TO_FINGER[pos.col] ?? 'right_pinky';
-  }
-  return map;
-}
+import FingeringEditor from '../components/FingeringEditor.tsx';
 
 // ─── Step 1: Pick layout ─────────────────────────────────────────────────────
 
@@ -60,121 +51,28 @@ function LayoutCard({ layout, selected, onSelect }: LayoutCardProps) {
   );
 }
 
-// ─── Step 2: Fingering editor ────────────────────────────────────────────────
+// ─── Step 2: Fingering editor (thin wrapper around the shared editor) ────────
 
-interface FingeringEditorProps {
+interface OnboardingFingeringStepProps {
   layout: Layout;
   onSave: (fingeringMapJson: string) => void;
   isSaving: boolean;
 }
 
-function FingeringEditor({ layout, onSave, isSaving }: FingeringEditorProps) {
+function OnboardingFingeringStep({ layout, onSave, isSaving }: OnboardingFingeringStepProps) {
   const positions: KeyPosition[] = useMemo(
     () => JSON.parse(layout.key_positions_json),
     [layout],
   );
 
-  const [fingerMap, setFingerMap] = useState<Record<string, FingerLabel>>(
-    () => buildDefaultFingeringMap(positions),
-  );
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
-
-  const rows = useMemo(
-    () =>
-      [0, 1, 2].map((r) =>
-        positions.filter((p) => p.row === r).sort((a, b) => a.col - b.col),
-      ),
-    [positions],
-  );
-
-  function assignFinger(finger: FingerLabel) {
-    if (!selectedKey) return;
-    setFingerMap((prev) => ({ ...prev, [selectedKey]: finger }));
-    setSelectedKey(null);
-  }
-
   return (
-    <div className="space-y-6">
-      <p className="text-gray-400 text-sm">
-        Click a key to reassign its finger. Defaults use standard touch-typing columns.
-      </p>
-
-      {/* Key grid */}
-      <div className="space-y-2">
-        {rows.map((row, ri) => (
-          <div key={ri} className="flex gap-1.5">
-            {row.map((pos) => {
-              const finger = fingerMap[pos.char] ?? COL_TO_FINGER[pos.col];
-              const color = FINGER_COLORS[finger] ?? 'bg-gray-700';
-              const isSelected = selectedKey === pos.char;
-              return (
-                <button
-                  key={pos.char}
-                  type="button"
-                  onClick={() => setSelectedKey(isSelected ? null : pos.char)}
-                  className={[
-                    'w-10 h-10 rounded font-mono text-sm font-medium transition-all',
-                    color,
-                    isSelected
-                      ? 'ring-2 ring-white scale-110'
-                      : 'hover:brightness-125',
-                  ].join(' ')}
-                  title={finger.replace(/_/g, ' ')}
-                >
-                  {pos.char}
-                </button>
-              );
-            })}
-          </div>
-        ))}
-      </div>
-
-      {/* Finger selector */}
-      {selectedKey && (
-        <div className="p-4 bg-gray-800 rounded-lg space-y-2">
-          <p className="text-sm text-gray-300">
-            Assign <span className="font-mono text-white">"{selectedKey}"</span> to:
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {FINGER_LABELS.map((f) => (
-              <button
-                key={f}
-                type="button"
-                onClick={() => assignFinger(f)}
-                className={[
-                  'px-3 py-1 rounded text-xs font-medium text-white',
-                  FINGER_COLORS[f],
-                  'hover:brightness-125',
-                ].join(' ')}
-              >
-                {f.replace(/_/g, ' ')}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Legend */}
-      <div className="flex flex-wrap gap-2">
-        {FINGER_LABELS.map((f) => (
-          <span
-            key={f}
-            className={['px-2 py-0.5 rounded text-xs text-white', FINGER_COLORS[f]].join(' ')}
-          >
-            {f.replace(/_/g, ' ')}
-          </span>
-        ))}
-      </div>
-
-      <button
-        type="button"
-        disabled={isSaving}
-        onClick={() => onSave(JSON.stringify(fingerMap))}
-        className="px-6 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg text-white font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-      >
-        {isSaving ? 'Saving…' : 'Save and start'}
-      </button>
-    </div>
+    <FingeringEditor
+      positions={positions}
+      onSave={(fingerMap: Record<string, FingerLabel>) => onSave(JSON.stringify(fingerMap))}
+      isSaving={isSaving}
+      saveLabel="Save and start"
+      savingLabel="Saving…"
+    />
   );
 }
 
@@ -272,7 +170,7 @@ export default function OnboardingPage() {
             type="button"
             disabled={selectedLayoutId === null}
             onClick={() => setStep(2)}
-            className="mt-6 px-6 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg text-white font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+            className="mt-6 px-6 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg text-crust font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
           >
             Next →
           </button>
@@ -288,7 +186,7 @@ export default function OnboardingPage() {
           >
             ← Back
           </button>
-          <FingeringEditor
+          <OnboardingFingeringStep
             layout={activeLayout}
             isSaving={mutation.isPending}
             onSave={(fingeringMapJson) =>

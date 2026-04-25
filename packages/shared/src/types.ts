@@ -78,6 +78,8 @@ export interface ProgressUpdatePayload {
   phase?: number;
   /** Pass true to mark this layout as the user's daily driver (all keys unlocked, no progression). */
   is_main_layout?: boolean;
+  /** JSON string: Record<string, FingerLabel>. Updates the user's per-key finger assignments for this layout. */
+  fingering_map_json?: string;
 }
 
 export interface UserSettings {

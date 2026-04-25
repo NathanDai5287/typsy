@@ -203,6 +203,10 @@ router.post('/progress', (req, res) => {
     updates.push('is_main_layout = ?');
     params.push(payload.is_main_layout ? 1 : 0);
   }
+  if (payload.fingering_map_json !== undefined) {
+    updates.push('fingering_map_json = ?');
+    params.push(payload.fingering_map_json);
+  }
 
   if (updates.length === 0) {
     res.status(400).json({ error: 'No fields to update' });

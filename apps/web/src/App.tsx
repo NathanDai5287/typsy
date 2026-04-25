@@ -7,6 +7,7 @@ import PracticePage from './pages/PracticePage.tsx';
 import DashboardPage from './pages/DashboardPage.tsx';
 import OptimizePage from './pages/OptimizePage.tsx';
 import LayoutsPage from './pages/LayoutsPage.tsx';
+import FingeringPage from './pages/FingeringPage.tsx';
 import SettingsPage from './pages/SettingsPage.tsx';
 
 export default function App() {
@@ -52,6 +53,7 @@ export default function App() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/optimize" element={<OptimizePage />} />
           <Route path="/layouts" element={<LayoutsPage />} />
+          <Route path="/fingering" element={<FingeringPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       </main>
