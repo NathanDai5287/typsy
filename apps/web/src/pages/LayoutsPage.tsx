@@ -7,15 +7,9 @@ import {
   postOnboarding,
   postProgressUpdate,
 } from '../lib/api.ts';
-import type { KeyPosition, LayoutSummary, FingerLabel } from '@typsy/shared';
-import { COL_TO_FINGER, SEEDED_LAYOUT_NAMES } from '@typsy/shared';
+import type { KeyPosition, LayoutSummary } from '@typsy/shared';
+import { SEEDED_LAYOUT_NAMES } from '@typsy/shared';
 import KeyboardVisual from '../components/KeyboardVisual.tsx';
-
-function defaultFingering(positions: KeyPosition[]): Record<string, FingerLabel> {
-  const m: Record<string, FingerLabel> = {};
-  for (const p of positions) m[p.char] = COL_TO_FINGER[p.col] ?? 'right_pinky';
-  return m;
-}
 
 export default function LayoutsPage() {
   const queryClient = useQueryClient();
@@ -89,11 +83,10 @@ export default function LayoutsPage() {
               updateProgress.mutate({ layout_id: s.layout.id, is_main_layout: value })
             }
             onSetUp={() => {
-              const positions: KeyPosition[] = JSON.parse(s.layout.key_positions_json);
-              onboard.mutate({
-                layout_id: s.layout.id,
-                fingering_map_json: JSON.stringify(defaultFingering(positions)),
-              });
+              // Fingerings are user-level and layout-independent, so
+              // setting up a new layout reuses the existing fingering
+              // automatically — no per-layout assignment needed.
+              onboard.mutate({ layout_id: s.layout.id });
             }}
             onDelete={() => remove.mutate({ layout_id: s.layout.id })}
           />
@@ -273,7 +266,7 @@ function LayoutCard({
       {/* Help text */}
       {!summary.has_progress && (
         <p className="text-xs text-gray-500 -mt-1">
-          Set up uses default touch-typing finger assignments. Tweak per-key in onboarding.
+          Uses your existing fingering. Tweak per-key on the Fingering page.
         </p>
       )}
     </div>

@@ -27,6 +27,14 @@ export interface User {
   id: number;
   created_at: string;
   settings_json: string;
+  /**
+   * JSON string: `Record<PosKey, FingerLabel>` where `PosKey = "row,col"`
+   * (see `posKey()` in `layouts.ts`). Layout-independent: applies to every
+   * layout the user practices, because the user's hands are anchored to
+   * physical key positions, not to the characters a layout puts there.
+   * Unmapped positions fall back to `KeyPosition.finger` (column default).
+   */
+  fingering_map_json: string;
 }
 
 export interface UserLayoutProgress {
@@ -34,7 +42,6 @@ export interface UserLayoutProgress {
   layout_id: number;
   unlocked_keys_json: string; // JSON string: string[]
   phase: number;
-  fingering_map_json: string; // JSON string: Record<string, FingerLabel>
   current_mode: string;
   last_session_at: string | null;
   /** 1 = layout is the user's daily driver (skip progressive unlocking, all keys treated as unlocked). 0 = learning. */
@@ -68,7 +75,24 @@ export interface NgramStat {
 
 export interface OnboardingPayload {
   layout_id: number;
-  fingering_map_json: string; // JSON string: Record<string, FingerLabel>
+}
+
+/**
+ * Body for `POST /api/user/initial-setup` — the first-run flow that asks
+ * the user which layout they already use day-to-day and (optionally) which
+ * one they'd like to learn next.
+ *
+ * - `daily_driver_layout_id` is created with `is_main_layout = 1` and every
+ *   alpha key already unlocked (no progressive ramp-up — the user already
+ *   knows the layout).
+ * - `learn_layout_id`, if present, is created with `is_main_layout = 0` and
+ *   the standard initial-subset unlock; it also becomes the active layout
+ *   so /practice opens straight on the new thing the user is here to learn.
+ *   When omitted, the daily driver becomes active.
+ */
+export interface InitialSetupPayload {
+  daily_driver_layout_id: number;
+  learn_layout_id?: number;
 }
 
 export interface ProgressUpdatePayload {
@@ -78,8 +102,16 @@ export interface ProgressUpdatePayload {
   phase?: number;
   /** Pass true to mark this layout as the user's daily driver (all keys unlocked, no progression). */
   is_main_layout?: boolean;
-  /** JSON string: Record<string, FingerLabel>. Updates the user's per-key finger assignments for this layout. */
-  fingering_map_json?: string;
+}
+
+/**
+ * Body for `POST /api/user/fingering`. The map is keyed by `PosKey` (the
+ * `"row,col"` string from `posKey()`), so the same finger assignment applies
+ * across every layout the user practices.
+ */
+export interface UserFingeringPayload {
+  /** JSON string: `Record<PosKey, FingerLabel>`. Replaces the user's full map. */
+  fingering_map_json: string;
 }
 
 export interface UserSettings {

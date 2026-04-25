@@ -60,14 +60,14 @@ export default function OptimizePage() {
     [activeLayout],
   );
 
-  const fingerOverrides = useMemo<Record<string, FingerLabel> | undefined>(() => {
-    if (!activeProgress) return;
+  const posFingerMap = useMemo<Record<string, FingerLabel> | undefined>(() => {
+    if (!userData) return;
     try {
-      return JSON.parse(activeProgress.fingering_map_json) as Record<string, FingerLabel>;
+      return JSON.parse(userData.user.fingering_map_json) as Record<string, FingerLabel>;
     } catch {
       return undefined;
     }
-  }, [activeProgress?.fingering_map_json]);
+  }, [userData?.user.fingering_map_json]);
 
   const totalChars = useMemo(() => totalCharsTyped(sessions ?? []), [sessions]);
   const ready = totalChars >= OPTIMIZER_MIN_CHARS;
@@ -85,8 +85,8 @@ export default function OptimizePage() {
         const userIndex = indexNgramStats(ngramRows ?? []);
         const result =
           algorithm === 'single-swap'
-            ? bestSingleSwap({ positions, userIndex })
-            : anneal({ positions, userIndex, iterations: 1500 });
+            ? bestSingleSwap({ positions, userIndex, posFingerMap })
+            : anneal({ positions, userIndex, posFingerMap, iterations: 1500 });
         setSuggestion({
           ...result,
           basePositions: positions.slice(),
@@ -115,14 +115,10 @@ export default function OptimizePage() {
         name,
         key_positions_json: JSON.stringify(suggestion.bestPositions),
       });
-      // Use no per-char fingering override on the new layout — chars have
-      // moved positions, so the source's char→finger map would assign the
-      // wrong fingers geometrically. Position-default (col-based) fingering
-      // takes over.
-      await postOnboarding({
-        layout_id: layout.id,
-        fingering_map_json: '{}',
-      });
+      // No per-layout fingering payload — the user's fingering is keyed by
+      // physical position and lives on `users`, so it carries over to the
+      // new layout automatically.
+      await postOnboarding({ layout_id: layout.id });
       await postActiveLayout({ layout_id: layout.id });
       return layout;
     },
@@ -227,7 +223,7 @@ export default function OptimizePage() {
       {suggestion && (
         <SuggestionPanel
           suggestion={suggestion}
-          fingerOverrides={fingerOverrides}
+          posFingerMap={posFingerMap}
           heatmap={heatmap}
           onAccept={() => acceptMutation.mutate()}
           onReject={reject}
@@ -242,7 +238,7 @@ export default function OptimizePage() {
 
 interface SuggestionPanelProps {
   suggestion: Suggestion;
-  fingerOverrides?: Record<string, FingerLabel>;
+  posFingerMap?: Record<string, FingerLabel>;
   heatmap: ReadonlyMap<string, number>;
   onAccept: () => void;
   onReject: () => void;
@@ -251,7 +247,7 @@ interface SuggestionPanelProps {
 
 function SuggestionPanel({
   suggestion,
-  fingerOverrides,
+  posFingerMap,
   heatmap,
   onAccept,
   onReject,
@@ -302,7 +298,7 @@ function SuggestionPanel({
           </div>
           <KeyboardVisual
             positions={suggestion.basePositions}
-            fingerOverrides={fingerOverrides}
+            posFingerMap={posFingerMap}
             heat={heatmap}
           />
         </div>
@@ -313,7 +309,7 @@ function SuggestionPanel({
           </div>
           <KeyboardVisual
             positions={suggestion.bestPositions}
-            fingerOverrides={fingerOverrides}
+            posFingerMap={posFingerMap}
             heat={heatmap}
           />
         </div>

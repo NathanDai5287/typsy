@@ -148,14 +148,14 @@ export default function PracticePage() {
     }
   }, [activeProgress, isMainLayout, positions]);
 
-  const fingerOverrides = useMemo<Record<string, FingerLabel>>(() => {
-    if (!activeProgress) return {};
+  const posFingerMap = useMemo<Record<string, FingerLabel>>(() => {
+    if (!userData) return {};
     try {
-      return JSON.parse(activeProgress.fingering_map_json) as Record<string, FingerLabel>;
+      return JSON.parse(userData.user.fingering_map_json) as Record<string, FingerLabel>;
     } catch {
       return {};
     }
-  }, [activeProgress?.fingering_map_json]);
+  }, [userData?.user.fingering_map_json]);
 
   /** Per-char muscle-memory hit count (drives keyboard fade). */
   const charHits = useMemo<Map<string, number>>(() => {
@@ -699,7 +699,7 @@ export default function PracticePage() {
             positions={positions}
             unlocked={unlockedSet}
             nextChar={nextChar}
-            fingerOverrides={fingerOverrides}
+            posFingerMap={posFingerMap}
             charHits={charHits}
           />
         </div>

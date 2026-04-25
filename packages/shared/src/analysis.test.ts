@@ -11,7 +11,7 @@ import {
   sessionsAsSeries,
 } from './analysis.js';
 import type { NgramStat, Session, KeyPosition } from './types.js';
-import { LAYOUT_DEFINITIONS } from './layouts.js';
+import { LAYOUT_DEFINITIONS, posKey } from './layouts.js';
 
 function loadPositions(name: string): KeyPosition[] {
   const def = LAYOUT_DEFINITIONS.find((d) => d.name === name)!;
@@ -45,8 +45,13 @@ describe('buildFingerMap', () => {
     expect(map.get('a')).toBe('left_pinky');
   });
 
-  it('respects override entries', () => {
-    const map = buildFingerMap(colemak, { a: 'right_pinky' });
+  it('respects position-keyed overrides', () => {
+    // Colemak puts 'a' at home-row col 0 (row=1, col=0). The user-level
+    // fingering map is keyed by physical position, so this reassigns
+    // whatever character lives at row 1 / col 0 — even if the user
+    // switches layouts.
+    const aPos = colemak.find((p) => p.char === 'a')!;
+    const map = buildFingerMap(colemak, { [posKey(aPos)]: 'right_pinky' });
     expect(map.get('a')).toBe('right_pinky');
     expect(map.get('s')).toBe('left_middle'); // Colemak col 2 → unchanged
   });
