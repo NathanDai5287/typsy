@@ -208,12 +208,12 @@ There is no separate `lint` or `typecheck` command — `pnpm build` is the typec
 | Day-to-day dev commands & seed/reset docs | `DEVELOPMENT.md` |
 | User-facing intro | `README.md` |
 | Devin agent config (gitignored local override allowed) | `.devin/config.local.json` |
+| CI / auto-merge workflow | `.github/workflows/ci.yml` |
 
 ### Things that DO NOT exist (don't go looking)
 - **Auth.** Single user hardcoded as `user_id = 1`. There are no login routes, no JWTs, no sessions cookies.
 - **Feature flags.** None.
 - **Env vars.** Only `PORT` (server, defaults to 3001). No `.env` file is needed for local dev.
-- **CI / GitHub Actions.** Not configured in this repo.
 - **Docker / containers.** Not configured.
 - **Lint / format config.** No ESLint, no Prettier. Match existing style by reading the file you're editing.
 
@@ -232,6 +232,8 @@ There is no separate `lint` or `typecheck` command — `pnpm build` is the typec
 - **All pure-function tests must work without a real `Math.random`.** Functions like `generateDrillSequence`, `generateFlowLine`, `runAnnealing` accept an injectable `rng` parameter — use it in tests for determinism.
 - **Tailwind theme is custom (Catppuccin Mocha).** Don't introduce ad-hoc hex colors; use the named tokens defined in `apps/web/tailwind.config.js`.
 - **`apps/server/dist/` is a build artifact** but is not gitignored at the time of this writing — leave it alone unless you're cleaning up.
+- **CI auto-merges on `devin-review` label.** `.github/workflows/ci.yml` runs build+test on every PR push, then if (and only if) a human applies the `devin-review` label, it marks the PR ready, enables auto-merge (merge commit), and deletes the branch. **Do not apply the `devin-review` label yourself** — it's the human's explicit "go ahead and merge" signal.
+- **Always work in a git worktree under `../worktrees/<slug>/`, never the main checkout.** `git switch` is global to a working tree, so two Devin instances in the same directory will flip each other's branch underneath them and commits will land on the wrong slug. `scripts/devin-spawn.sh <slug>` creates the worktree; `scripts/devin-locks.sh claim` will refuse a second claim from the same `pwd` as a backstop.
 - **`.pnpm-store/` at the repo root** is from a previous local install; it's gitignored and safe to delete if you want to free space.
 - **No services need to be running.** No Postgres, no Redis, no message queue. SQLite is the entire backing store and `getDb()` creates it on demand.
 
