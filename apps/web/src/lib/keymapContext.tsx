@@ -120,8 +120,17 @@ export function KeymapProvider({ children }: KeymapProviderProps): JSX.Element {
   // ─── Global bindings ────────────────────────────────────────────────
   // Registered with `useKeymap` here so they're always live. These bind
   // by code so they remain layout-agnostic.
+  //
+  // Esc is intentionally NOT bound here. Closing the help overlay on Esc
+  // is handled by the capture-phase listener below (only active while
+  // `isHelpOpen`), so Esc is free to mean "end session" / "clear
+  // selection" / etc. on whatever page is currently mounted. A redundant
+  // global Esc binding here would `stopImmediatePropagation` and shadow
+  // every page-level Esc handler — which manifests as "Esc stops working
+  // after I navigate away and come back" because the global listener
+  // gets re-positioned ahead of the page's listener in the document's
+  // bubble queue on remount.
   const armLeader = useCallback(() => setIsLeaderArmed(true), []);
-  const closeHelp = useCallback(() => setIsHelpOpen(false), []);
   const toggleHelp = useCallback(() => setIsHelpOpen((v) => !v), []);
 
   const globalBindings: Keybinding[] = useMemo(
@@ -132,13 +141,6 @@ export function KeymapProvider({ children }: KeymapProviderProps): JSX.Element {
         modifiers: new Set(['shift']),
         description: 'Show keyboard shortcuts',
         handler: toggleHelp,
-        allowInInput: false,
-      },
-      {
-        id: 'global.close-help',
-        code: 'Escape',
-        description: 'Close help overlay',
-        handler: closeHelp,
         allowInInput: false,
       },
       {
@@ -197,7 +199,7 @@ export function KeymapProvider({ children }: KeymapProviderProps): JSX.Element {
         allowInInput: false,
       },
     ],
-    [armLeader, closeHelp, toggleHelp, navigate],
+    [armLeader, toggleHelp, navigate],
   );
 
   // The leader-armed state suppresses the global "g"-prefix binding from
