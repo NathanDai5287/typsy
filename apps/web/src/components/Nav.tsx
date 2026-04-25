@@ -1,31 +1,66 @@
 import { NavLink } from 'react-router-dom';
 
-const links = [
-  { to: '/', label: 'Practice' },
-  { to: '/dashboard', label: 'Dashboard' },
-  { to: '/layouts', label: 'Layouts' },
-  { to: '/fingering', label: 'Fingering' },
-  { to: '/optimize', label: 'Optimize' },
-  { to: '/settings', label: 'Settings' },
+/**
+ * Terminal-style top nav. Each link shows its underlined shortcut letter
+ * (the QWERTY-position letter for the `g <letter>` chord, also reachable
+ * directly via `Shift+<letter>`). The active route is rendered in
+ * inverted style so the eye finds it instantly.
+ *
+ * Visually the bar is one ASCII row: `typsy/ practice  dashboard  ...`
+ * with a single bottom border separating it from the page body.
+ */
+const links: { to: string; label: string; shortcut: string; end?: boolean }[] = [
+  { to: '/',           label: 'practice',  shortcut: 'p', end: true },
+  { to: '/dashboard',  label: 'dashboard', shortcut: 'd' },
+  { to: '/layouts',    label: 'layouts',   shortcut: 'l' },
+  { to: '/fingering',  label: 'fingering', shortcut: 'f' },
+  { to: '/optimize',   label: 'optimize',  shortcut: 'o' },
+  { to: '/settings',   label: 'settings',  shortcut: 's' },
 ];
 
-export default function Nav() {
+/**
+ * Highlight the shortcut letter inside a label. We split on the first
+ * occurrence (case-insensitive) so e.g. "practice" + "p" renders as
+ * `[P]ractice` with the bracketed letter receiving the accent color.
+ */
+function renderLabel(label: string, shortcut: string): JSX.Element {
+  const idx = label.toLowerCase().indexOf(shortcut.toLowerCase());
+  if (idx < 0) {
+    return <span>{label}</span>;
+  }
   return (
-    <nav className="border-b border-gray-800 px-6 py-3 flex items-center gap-6">
-      <span className="text-blue-400 font-bold tracking-widest text-sm mr-4">TYPSY</span>
-      {links.map(({ to, label }) => (
+    <>
+      <span>{label.slice(0, idx)}</span>
+      <span className="text-yellow-400">{label[idx]}</span>
+      <span>{label.slice(idx + 1)}</span>
+    </>
+  );
+}
+
+export default function Nav(): JSX.Element {
+  return (
+    <nav
+      aria-label="Primary"
+      className="border-b border-bg4 bg-bg_h px-4 h-9 flex items-center gap-1 text-sm select-none"
+    >
+      <span className="text-yellow-400 font-bold mr-3 tracking-wider">typsy</span>
+      <span className="text-fg4 mr-2">/</span>
+      {links.map(({ to, label, shortcut, end }) => (
         <NavLink
           key={to}
           to={to}
-          end={to === '/'}
+          end={end}
           className={({ isActive }) =>
             [
-              'text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded px-1',
-              isActive ? 'text-white font-medium' : 'text-gray-400 hover:text-gray-200',
+              'px-2 py-0.5 transition-none focus-visible:outline-none focus-visible:bg-bg4',
+              isActive
+                ? 'text-bg_h bg-yellow-400'
+                : 'text-fg2 hover:text-fg_h',
             ].join(' ')
           }
+          title={`Shift+${shortcut.toUpperCase()} or g ${shortcut}`}
         >
-          {label}
+          {renderLabel(label, shortcut)}
         </NavLink>
       ))}
     </nav>

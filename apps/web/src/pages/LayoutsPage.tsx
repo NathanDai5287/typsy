@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   deleteLayout,
@@ -10,10 +10,15 @@ import {
 import type { KeyPosition, LayoutSummary } from '@typsy/shared';
 import { SEEDED_LAYOUT_NAMES } from '@typsy/shared';
 import KeyboardVisual from '../components/KeyboardVisual.tsx';
+import { useRegisterPageKeymap } from '../lib/keymapContext.tsx';
+import type { Keybinding } from '../lib/keymap.ts';
 
-export default function LayoutsPage() {
+export default function LayoutsPage(): JSX.Element {
   const queryClient = useQueryClient();
   const [pendingId, setPendingId] = useState<number | null>(null);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(null);
+  const cardRefs = useRef<Map<number, HTMLDivElement | null>>(new Map());
 
   const { data: summaries, isLoading } = useQuery({
     queryKey: ['layouts', 'summary'],
@@ -36,9 +41,7 @@ export default function LayoutsPage() {
     mutationFn: postOnboarding,
     onMutate: (vars) => setPendingId(vars.layout_id),
     onSettled: () => setPendingId(null),
-    onSuccess: () => {
-      refreshAll();
-    },
+    onSuccess: refreshAll,
   });
 
   const updateProgress = useMutation({
@@ -51,44 +54,146 @@ export default function LayoutsPage() {
   const remove = useMutation({
     mutationFn: (vars: { layout_id: number }) => deleteLayout(vars.layout_id),
     onMutate: (vars) => setPendingId(vars.layout_id),
-    onSettled: () => setPendingId(null),
+    onSettled: () => {
+      setPendingId(null);
+      setConfirmingDeleteId(null);
+    },
     onSuccess: refreshAll,
   });
 
+  const items = summaries ?? [];
+  const selected = items[selectedIndex];
+  const stateRef = useRef({ items, selected, confirmingDeleteId });
+  stateRef.current = { items, selected, confirmingDeleteId };
+
+  // Scroll the focused card into view as the selection moves so the
+  // keyboard-driven flow doesn't end up below the fold.
+  useEffect(() => {
+    if (!selected) return;
+    const el = cardRefs.current.get(selected.layout.id);
+    el?.scrollIntoView({ block: 'nearest' });
+  }, [selectedIndex, selected]);
+
+  // ─── Keymap ───────────────────────────────────────────────────────
+  const bindings = useMemo<Keybinding[]>(
+    () => [
+      {
+        id: 'layouts.next',
+        code: 'KeyJ',
+        description: 'Next layout',
+        handler: () =>
+          setSelectedIndex((i) => Math.min(stateRef.current.items.length - 1, i + 1)),
+      },
+      {
+        id: 'layouts.prev',
+        code: 'KeyK',
+        description: 'Previous layout',
+        handler: () => setSelectedIndex((i) => Math.max(0, i - 1)),
+      },
+      {
+        id: 'layouts.adown',
+        code: 'ArrowDown',
+        description: 'Next layout',
+        handler: () =>
+          setSelectedIndex((i) => Math.min(stateRef.current.items.length - 1, i + 1)),
+      },
+      {
+        id: 'layouts.aup',
+        code: 'ArrowUp',
+        description: 'Previous layout',
+        handler: () => setSelectedIndex((i) => Math.max(0, i - 1)),
+      },
+      {
+        id: 'layouts.activate',
+        code: 'Enter',
+        description: 'Switch to / set up the highlighted layout',
+        handler: () => {
+          const s = stateRef.current.selected;
+          if (!s) return;
+          if (!s.has_progress) onboard.mutate({ layout_id: s.layout.id });
+          else if (!s.is_active) setActive.mutate({ layout_id: s.layout.id });
+        },
+      },
+      {
+        id: 'layouts.toggle-main',
+        code: 'KeyM',
+        description: 'Toggle daily-driver flag',
+        handler: () => {
+          const s = stateRef.current.selected;
+          if (!s || !s.has_progress) return;
+          updateProgress.mutate({
+            layout_id: s.layout.id,
+            is_main_layout: !s.is_main_layout,
+          });
+        },
+      },
+      {
+        id: 'layouts.delete',
+        code: 'KeyX',
+        description: 'Delete layout (custom layouts only)',
+        handler: () => {
+          const s = stateRef.current.selected;
+          if (!s) return;
+          if (SEEDED_LAYOUT_NAMES.has(s.layout.name)) return;
+          if (stateRef.current.confirmingDeleteId === s.layout.id) {
+            // Press again to confirm.
+            remove.mutate({ layout_id: s.layout.id });
+          } else {
+            setConfirmingDeleteId(s.layout.id);
+          }
+        },
+      },
+      {
+        id: 'layouts.cancel',
+        code: 'Escape',
+        description: 'Cancel delete confirmation',
+        handler: () => setConfirmingDeleteId(null),
+      },
+    ],
+    [onboard, setActive, updateProgress, remove],
+  );
+  useRegisterPageKeymap('Layouts', bindings, !isLoading && items.length > 0);
+
   if (isLoading || !summaries) {
     return (
-      <div className="flex h-[60vh] items-center justify-center text-gray-400">
-        Loading layouts…
+      <div className="flex h-[60vh] items-center justify-center text-fg3">
+        loading layouts…
       </div>
     );
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-6 py-8 space-y-4">
+    <div className="max-w-5xl mx-auto px-4 py-6 space-y-4">
       <header>
-        <h1 className="text-3xl font-bold text-white">Layouts</h1>
-        <p className="text-gray-400 mt-1">
-          Switch between layouts, mark a daily driver, or set up a new one.
+        <h1 className="text-xl text-fg_h">layouts</h1>
+        <p className="text-fg3 text-sm mt-0.5">
+          <kbd className="kbd">j</kbd>/<kbd className="kbd">k</kbd> select ·{' '}
+          <kbd className="kbd">Enter</kbd> switch / setup ·{' '}
+          <kbd className="kbd">m</kbd> toggle daily ·{' '}
+          <kbd className="kbd">x</kbd> delete (custom)
         </p>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {summaries.map((s) => (
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {summaries.map((s, idx) => (
           <LayoutCard
             key={s.layout.id}
+            ref={(el) => {
+              cardRefs.current.set(s.layout.id, el);
+            }}
             summary={s}
             isPending={pendingId === s.layout.id}
+            isFocused={idx === selectedIndex}
+            isConfirmingDelete={confirmingDeleteId === s.layout.id}
+            onFocus={() => setSelectedIndex(idx)}
             onSetActive={() => setActive.mutate({ layout_id: s.layout.id })}
             onSetMain={(value) =>
               updateProgress.mutate({ layout_id: s.layout.id, is_main_layout: value })
             }
-            onSetUp={() => {
-              // Fingerings are user-level and layout-independent, so
-              // setting up a new layout reuses the existing fingering
-              // automatically — no per-layout assignment needed.
-              onboard.mutate({ layout_id: s.layout.id });
-            }}
-            onDelete={() => remove.mutate({ layout_id: s.layout.id })}
+            onSetUp={() => onboard.mutate({ layout_id: s.layout.id })}
+            onRequestDelete={() => setConfirmingDeleteId(s.layout.id)}
+            onConfirmDelete={() => remove.mutate({ layout_id: s.layout.id })}
+            onCancelDelete={() => setConfirmingDeleteId(null)}
           />
         ))}
       </div>
@@ -96,82 +201,86 @@ export default function LayoutsPage() {
   );
 }
 
-// ─── Card ────────────────────────────────────────────────────────────────
+// ─── Card ──────────────────────────────────────────────────────────
 
 interface LayoutCardProps {
   summary: LayoutSummary;
   isPending: boolean;
+  isFocused: boolean;
+  isConfirmingDelete: boolean;
+  onFocus: () => void;
   onSetActive: () => void;
   onSetMain: (value: boolean) => void;
   onSetUp: () => void;
-  onDelete: () => void;
+  onRequestDelete: () => void;
+  onConfirmDelete: () => void;
+  onCancelDelete: () => void;
 }
 
-function LayoutCard({
-  summary,
-  isPending,
-  onSetActive,
-  onSetMain,
-  onSetUp,
-  onDelete,
-}: LayoutCardProps) {
+const LayoutCard = forwardRef<HTMLDivElement, LayoutCardProps>(function LayoutCard(
+  {
+    summary,
+    isPending,
+    isFocused,
+    isConfirmingDelete,
+    onFocus,
+    onSetActive,
+    onSetMain,
+    onSetUp,
+    onRequestDelete,
+    onConfirmDelete,
+    onCancelDelete,
+  },
+  ref,
+) {
   const positions: KeyPosition[] = JSON.parse(summary.layout.key_positions_json);
   const totalAlpha = positions.filter((p) => /^[a-z]$/.test(p.char)).length;
   const isSeeded = SEEDED_LAYOUT_NAMES.has(summary.layout.name);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const status = !summary.has_progress
-    ? 'Not set up'
+    ? 'not set up'
     : summary.is_main_layout
-      ? 'Daily driver'
-      : `Learning · ${summary.unlocked_keys_count}/${totalAlpha} keys`;
+      ? 'daily driver'
+      : `learning · ${summary.unlocked_keys_count}/${totalAlpha} keys`;
 
   return (
     <div
+      ref={ref}
+      onClick={onFocus}
       className={[
-        'bg-gray-900 rounded-xl p-5 flex flex-col gap-4 border-2 transition-colors',
-        summary.is_active ? 'border-blue-500' : 'border-gray-800',
+        'panel p-3 flex flex-col gap-3 cursor-pointer',
+        isFocused ? 'border-yellow-400' : '',
+        summary.is_active && !isFocused ? 'border-blue-400' : '',
       ].join(' ')}
     >
-      <div className="flex items-start justify-between">
+      {/* Title row */}
+      <div className="flex items-start justify-between gap-2">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold text-white">{summary.layout.name}</h2>
-            {summary.is_active && (
-              <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-600 text-crust">
-                Active
-              </span>
-            )}
-            {summary.is_main_layout && (
-              <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-yellow-600 text-crust">
-                Daily
-              </span>
-            )}
+            <h2 className="text-fg_h font-semibold">{summary.layout.name}</h2>
+            {summary.is_active && <Tag color="blue">active</Tag>}
+            {summary.is_main_layout && <Tag color="yellow">daily</Tag>}
           </div>
-          <p className="text-sm text-gray-400 mt-1">{status}</p>
+          <p className="text-xs text-fg3 mt-0.5">{status}</p>
         </div>
 
-        {/* Tiny stats column */}
-        <div className="text-right text-xs text-gray-500 leading-tight">
+        <div className="text-right text-[11px] text-fg4 leading-tight tabular-nums">
           {summary.has_progress ? (
             <>
               <div>
-                <span className="text-gray-300 font-mono tabular-nums">
+                <span className="text-fg_h">
                   {summary.last_wpm !== null ? Math.round(summary.last_wpm) : '—'}
                 </span>{' '}
-                WPM
+                wpm
               </div>
               <div>
-                <span className="text-gray-300 font-mono tabular-nums">
+                <span className="text-fg_h">
                   {summary.total_chars.toLocaleString()}
                 </span>{' '}
                 chars
               </div>
               <div>
-                <span className="text-gray-300 font-mono tabular-nums">
-                  {summary.session_count}
-                </span>{' '}
-                sessions
+                <span className="text-fg_h">{summary.session_count}</span> sessions
               </div>
             </>
           ) : (
@@ -182,43 +291,52 @@ function LayoutCard({
 
       {/* Layout preview */}
       <div className="flex justify-center">
-        <KeyboardVisual positions={positions} />
+        <KeyboardVisual positions={positions} compact />
       </div>
 
       {/* Actions */}
-      {confirmingDelete ? (
-        <div className="mt-1 rounded-lg border border-red-900/60 bg-red-950/30 px-3 py-2.5 flex flex-col gap-2">
-          <p className="text-sm text-red-200">
-            Delete <span className="font-semibold">{summary.layout.name}</span>? All sessions
-            and ngram data on this layout will be permanently erased.
+      {isConfirmingDelete ? (
+        <div className="border border-red-400 px-3 py-2 space-y-1.5">
+          <p className="text-xs text-red-400">
+            Delete <span className="font-semibold">{summary.layout.name}</span>?
+            All sessions and ngram data on this layout will be erased.
           </p>
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={() => setConfirmingDelete(false)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onCancelDelete();
+              }}
               disabled={isPending}
-              className="px-3 py-1.5 text-sm rounded-lg border border-gray-700 text-gray-300 hover:border-gray-500 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+              className="btn btn-ghost"
             >
               Cancel
             </button>
             <button
               type="button"
-              onClick={onDelete}
+              onClick={(e) => {
+                e.stopPropagation();
+                onConfirmDelete();
+              }}
               disabled={isPending}
-              className="px-3 py-1.5 text-sm rounded-lg bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+              className="btn btn-danger"
             >
-              {isPending ? 'Deleting…' : 'Delete'}
+              {isPending ? 'Deleting…' : 'Confirm delete'}
             </button>
           </div>
         </div>
       ) : (
-        <div className="flex flex-wrap gap-2 mt-1">
+        <div className="flex flex-wrap gap-2 -mt-1">
           {!summary.has_progress ? (
             <button
               type="button"
-              onClick={onSetUp}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSetUp();
+              }}
               disabled={isPending}
-              className="px-3 py-1.5 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-crust font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+              className="btn btn-primary"
             >
               {isPending ? 'Setting up…' : 'Set up'}
             </button>
@@ -227,35 +345,42 @@ function LayoutCard({
               {!summary.is_active && (
                 <button
                   type="button"
-                  onClick={onSetActive}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSetActive();
+                  }}
                   disabled={isPending}
-                  className="px-3 py-1.5 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-crust font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                  className="btn btn-primary"
                 >
                   {isPending ? 'Switching…' : 'Switch to'}
                 </button>
               )}
               <button
                 type="button"
-                onClick={() => onSetMain(!summary.is_main_layout)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSetMain(!summary.is_main_layout);
+                }}
                 disabled={isPending}
                 aria-pressed={summary.is_main_layout}
                 className={[
-                  'px-3 py-1.5 text-sm rounded-lg border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400',
-                  summary.is_main_layout
-                    ? 'border-yellow-600 text-yellow-300 bg-yellow-900/30 hover:bg-yellow-900/50'
-                    : 'border-gray-700 text-gray-300 hover:border-gray-500',
+                  'btn',
+                  summary.is_main_layout ? 'text-yellow-400 border-yellow-400' : '',
                 ].join(' ')}
               >
-                {summary.is_main_layout ? 'Mark as learning' : 'Mark as daily driver'}
+                {summary.is_main_layout ? 'Mark as learning' : 'Mark daily driver'}
               </button>
             </>
           )}
           {!isSeeded && (
             <button
               type="button"
-              onClick={() => setConfirmingDelete(true)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onRequestDelete();
+              }}
               disabled={isPending}
-              className="ml-auto px-3 py-1.5 text-sm rounded-lg border border-red-900/60 text-red-300 hover:bg-red-900/30 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+              className="btn btn-danger ml-auto"
             >
               Delete
             </button>
@@ -263,12 +388,29 @@ function LayoutCard({
         </div>
       )}
 
-      {/* Help text */}
       {!summary.has_progress && (
-        <p className="text-xs text-gray-500 -mt-1">
-          Uses your existing fingering. Tweak per-key on the Fingering page.
+        <p className="text-[11px] text-fg4 -mt-1">
+          uses your existing fingering — tweak per-key on the Fingering page.
         </p>
       )}
     </div>
+  );
+});
+
+function Tag({
+  color,
+  children,
+}: {
+  color: 'blue' | 'yellow';
+  children: React.ReactNode;
+}): JSX.Element {
+  const cls =
+    color === 'blue'
+      ? 'border-blue-400 text-blue-400'
+      : 'border-yellow-400 text-yellow-400';
+  return (
+    <span className={`text-[10px] uppercase tracking-widest px-1 border ${cls}`}>
+      {children}
+    </span>
   );
 }
