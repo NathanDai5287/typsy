@@ -375,8 +375,12 @@ export default function PracticePage() {
       return;
     }
 
+    // Use the last keypress time (not the Esc time) so trailing idle
+    // time between the last char and Esc doesn't artificially lower wpm.
+    const lastKey = lastKeypressTimeRef.current;
     const now = Date.now();
-    const minutes = (now - st) / 60_000;
+    const endedAt = lastKey ?? now;
+    const minutes = (endedAt - st) / 60_000;
     const wpm = minutes > 0 ? finalCursor / CHARS_PER_WORD / minutes : 0;
     const accuracy = finalKeystrokes > 0 ? finalCursor / finalKeystrokes : 1;
     const errors = finalKeystrokes - finalCursor;
@@ -407,7 +411,7 @@ export default function PracticePage() {
         user_id: 1,
         layout_id: activeProgress.layout_id,
         started_at: new Date(st).toISOString(),
-        ended_at: new Date(now).toISOString(),
+        ended_at: new Date(endedAt).toISOString(),
         mode: localMode,
         wpm: Math.round(wpm * 10) / 10,
         accuracy: Math.round(accuracy * 1000) / 1000,
