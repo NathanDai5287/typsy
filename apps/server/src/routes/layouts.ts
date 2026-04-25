@@ -3,11 +3,9 @@ import type { Router as ExpressRouter } from 'express';
 import { getDb } from '../db/client.js';
 import { getCurrentUserId } from '../db/dataMode.js';
 import type { Layout, LayoutSummary, User, UserSettings } from '@typsy/shared';
+import { SEEDED_LAYOUT_NAMES } from '@typsy/shared';
 
 const router: ExpressRouter = Router();
-
-/** Names of layouts seeded at install time — these can never be deleted. */
-const SEEDED_NAMES = new Set(['QWERTY', 'Colemak', 'Graphite']);
 
 router.get('/', (_req, res) => {
   const db = getDb();
@@ -49,7 +47,7 @@ router.post('/', (req, res) => {
     return;
   }
 
-  if (SEEDED_NAMES.has(name)) {
+  if (SEEDED_LAYOUT_NAMES.has(name)) {
     res.status(400).json({ error: 'Cannot use a seeded layout name' });
     return;
   }
@@ -88,7 +86,7 @@ router.delete('/:id', (req, res) => {
     res.status(404).json({ error: 'Layout not found' });
     return;
   }
-  if (SEEDED_NAMES.has(layout.name)) {
+  if (SEEDED_LAYOUT_NAMES.has(layout.name)) {
     res.status(400).json({ error: 'Seeded layouts cannot be deleted' });
     return;
   }

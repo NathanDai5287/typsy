@@ -89,6 +89,11 @@ export const LAYOUT_DEFINITIONS: LayoutDefinition[] = [
   key_positions_json: JSON.stringify(buildKeyPositions(grid)),
 }));
 
+/** Names of layouts seeded at install time — these can never be deleted. */
+export const SEEDED_LAYOUT_NAMES: ReadonlySet<string> = new Set(
+  LAYOUT_DEFINITIONS.map((d) => d.name),
+);
+
 /** Returns all key positions for a layout by name. */
 export function getLayoutPositions(name: string): KeyPosition[] | null {
   const def = LAYOUT_DEFINITIONS.find((d) => d.name === name);
