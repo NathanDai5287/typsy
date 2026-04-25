@@ -57,14 +57,9 @@ function tokenize(charData: readonly CharData[]): TypingToken[] {
   return out;
 }
 
-function renderChar(
-  cd: CharData,
-  i: number,
-  cursor: number,
-  sessionComplete: boolean,
-): JSX.Element {
+function renderChar(cd: CharData, i: number, cursor: number): JSX.Element {
   const cls = [
-    i === cursor && !sessionComplete ? 'border-b-2 border-blue-400' : '',
+    i === cursor ? 'border-b-2 border-blue-400' : '',
     cd.state === 'correct' ? 'text-green-400' : '',
     cd.state === 'wrong' ? 'text-red-500' : '',
     cd.state === 'pending' ? 'text-gray-500' : '',
@@ -191,17 +186,24 @@ export default function PracticePage() {
   }
 
   // ─── Session state ───────────────────────────────────────────────────────
+  // Practice is one indefinite stream — there is no "complete" or "paused"
+  // state. The user types until they press Esc, which flushes data, posts a
+  // session row (flow only), and resets back to a fresh stream. `lastSummary`
+  // is the transient post-Esc toast.
   const [sentence, setSentence] = useState('');
   const [charData, setCharData] = useState<CharData[]>([]);
   const [cursor, setCursor] = useState(0);
   const [totalKeystrokes, setTotalKeystrokes] = useState(0);
   const [startTime, setStartTime] = useState<number | null>(null);
-  const [isPaused, setIsPaused] = useState(false);
-  const [sessionComplete, setSessionComplete] = useState(false);
   const [liveWpm, setLiveWpm] = useState(0);
   const [liveAccuracy, setLiveAccuracy] = useState(100);
   const [showKeyboard, setShowKeyboard] = useState(true);
-  const [justUnlocked, setJustUnlocked] = useState<string | null>(null);
+  const [lastSummary, setLastSummary] = useState<{
+    wpm: number;
+    accuracy: number;
+    mode: Mode;
+    unlocked?: string;
+  } | null>(null);
 
   const ngramTrackerRef = useRef<NgramTracker | null>(null);
   const lastKeypressTimeRef = useRef<number | null>(null);
@@ -210,14 +212,10 @@ export default function PracticePage() {
   const cursorRef = useRef(cursor);
   const totalKeystrokesRef = useRef(totalKeystrokes);
   const startTimeRef = useRef(startTime);
-  const isPausedRef = useRef(isPaused);
-  const sessionCompleteRef = useRef(sessionComplete);
   const sentenceRef = useRef(sentence);
   cursorRef.current = cursor;
   totalKeystrokesRef.current = totalKeystrokes;
   startTimeRef.current = startTime;
-  isPausedRef.current = isPaused;
-  sessionCompleteRef.current = sessionComplete;
   sentenceRef.current = sentence;
 
   // ─── Reset session ───────────────────────────────────────────────────────
@@ -232,8 +230,6 @@ export default function PracticePage() {
     setCursor(0);
     setTotalKeystrokes(0);
     setStartTime(null);
-    setIsPaused(false);
-    setSessionComplete(false);
     setLiveWpm(0);
     setLiveAccuracy(100);
     lastKeypressTimeRef.current = null;
@@ -270,80 +266,135 @@ export default function PracticePage() {
     };
   }, []);
 
-  // ─── Session complete + unlock check ─────────────────────────────────────
-  const completeSession = useCallback(
-    async (finalCursor: number, finalKeystrokes: number, st: number, endTime: number) => {
-      ngramTrackerRef.current?.finalizeWord();
-      await ngramTrackerRef.current?.stop();
+  // ─── Append more content when the cursor runs out ────────────────────────
+  /**
+   * Practice is unlimited — when the cursor reaches the end of the visible
+   * sentence we splice another generated chunk on so typing continues
+   * without an explicit "round complete" step. The chunk is prefixed with
+   * a single space so it cleanly joins onto whatever the user just typed.
+   */
+  const appendNextChunk = useCallback(() => {
+    if (!ngramRows || unlockedSet.size === 0) return;
+    const more = ' ' + buildSentence(mode, unlockedSet, ngramRows);
+    setSentence((prev) => prev + more);
+    setCharData((prev) => [...prev, ...initCharData(more)]);
+  }, [mode, unlockedSet, ngramRows]);
 
-      const durationMs = endTime - st;
-      const minutes = durationMs / 60_000;
-      const wpm = minutes > 0 ? finalCursor / CHARS_PER_WORD / minutes : 0;
-      const accuracy = finalKeystrokes > 0 ? finalCursor / finalKeystrokes : 1;
-      const errors = finalKeystrokes - finalCursor;
+  // ─── End session (flush + persist + reset) ───────────────────────────────
+  /**
+   * Triggered by Esc (or the End button). Snapshots the current stats,
+   * flushes the ngram tracker, persists a session row + runs the unlock
+   * check (flow only — drill is practice-only), shows a transient summary
+   * toast, and resets the page back to a fresh stream so the user can
+   * keep typing immediately. Sessions don't naturally complete; this is
+   * the only path to commit data.
+   */
+  const endSession = useCallback(async () => {
+    const finalCursor = cursorRef.current;
+    const finalKeystrokes = totalKeystrokesRef.current;
+    const st = startTimeRef.current;
+    const localMode = mode;
+    const tracker = ngramTrackerRef.current;
 
-      setLiveWpm(Math.round(wpm));
-      setLiveAccuracy(Math.round(accuracy * 100));
-      setSessionComplete(true);
+    // Nothing to commit if the user hasn't actually typed anything yet —
+    // just regenerate the stream so Esc still feels like "give me a fresh
+    // start".
+    if (st === null || finalCursor === 0) {
+      resetSession();
+      return;
+    }
 
-      if (!activeProgress) return;
-      // Drill is practice-only — show stats on screen but don't persist.
-      if (mode === 'drill') return;
+    const now = Date.now();
+    const minutes = (now - st) / 60_000;
+    const wpm = minutes > 0 ? finalCursor / CHARS_PER_WORD / minutes : 0;
+    const accuracy = finalKeystrokes > 0 ? finalCursor / finalKeystrokes : 1;
+    const errors = finalKeystrokes - finalCursor;
 
-      try {
-        await postSession({
-          user_id: 1,
-          layout_id: activeProgress.layout_id,
-          started_at: new Date(st).toISOString(),
-          ended_at: new Date(endTime).toISOString(),
-          mode,
-          wpm: Math.round(wpm * 10) / 10,
-          accuracy: Math.round(accuracy * 1000) / 1000,
-          chars_typed: finalCursor,
-          errors,
-          cumulative_chars_at_session_end: 0, // server computes this
+    // Capture the trailing partial word and kick off the flush. We hold
+    // onto the promise so the unlock check below can wait for the server
+    // to see the latest deltas. We null the ref *before* resetSession so
+    // its own (fire-and-forget) stop() doesn't double-flush the tracker
+    // we're already managing.
+    tracker?.finalizeWord();
+    const flushPromise = tracker?.stop() ?? Promise.resolve();
+    ngramTrackerRef.current = null;
+
+    resetSession();
+    setLastSummary({
+      wpm: Math.round(wpm),
+      accuracy: Math.round(accuracy * 100),
+      mode: localMode,
+    });
+
+    // Drill is practice-only — no session row, no unlock check.
+    if (localMode !== 'flow' || !activeProgress) return;
+
+    try {
+      await flushPromise;
+
+      await postSession({
+        user_id: 1,
+        layout_id: activeProgress.layout_id,
+        started_at: new Date(st).toISOString(),
+        ended_at: new Date(now).toISOString(),
+        mode: localMode,
+        wpm: Math.round(wpm * 10) / 10,
+        accuracy: Math.round(accuracy * 1000) / 1000,
+        chars_typed: finalCursor,
+        errors,
+        cumulative_chars_at_session_end: 0, // server computes this
+      });
+
+      // Progressive unlock check is only relevant for non-main layouts —
+      // when the user has marked a layout as their daily driver, every
+      // key is already unlocked.
+      if (!isMainLayout) {
+        const fresh = await queryClient.fetchQuery<NgramStat[]>({
+          queryKey: ['ngramStats', activeProgress.layout_id],
+          queryFn: () => fetchNgramStats(activeProgress.layout_id),
         });
 
-        // Progressive unlock check is only relevant for non-main layouts —
-        // when the user has marked a layout as their daily driver, every
-        // key is already unlocked.
-        if (!isMainLayout) {
-          const fresh = await queryClient.fetchQuery<NgramStat[]>({
-            queryKey: ['ngramStats', activeProgress.layout_id],
-            queryFn: () => fetchNgramStats(activeProgress.layout_id),
+        const idx = indexNgramStats(fresh);
+        const unlockedArr = Array.from(unlockedSet);
+        const health = computeKeyHealth(idx, unlockedArr);
+        const next = shouldUnlockNextKey(health, unlockedArr, positions);
+        if (next) {
+          const nextUnlocked = [...unlockedArr, next].sort();
+          await postProgressUpdate({
+            layout_id: activeProgress.layout_id,
+            unlocked_keys_json: JSON.stringify(nextUnlocked),
           });
-
-          const idx = indexNgramStats(fresh);
-          const unlockedArr = Array.from(unlockedSet);
-          const health = computeKeyHealth(idx, unlockedArr);
-          const next = shouldUnlockNextKey(health, unlockedArr, positions);
-          if (next) {
-            const nextUnlocked = [...unlockedArr, next].sort();
-            await postProgressUpdate({
-              layout_id: activeProgress.layout_id,
-              unlocked_keys_json: JSON.stringify(nextUnlocked),
-            });
-            setJustUnlocked(next);
-            void queryClient.invalidateQueries({ queryKey: ['user'] });
-          }
-        } else {
-          // Still refresh ngram stats so the dashboard / next-sentence
-          // generation see fresh data.
-          void queryClient.invalidateQueries({
-            queryKey: ['ngramStats', activeProgress.layout_id],
-          });
+          // Fold the unlock notice into whichever toast is currently
+          // showing. If the toast has already auto-cleared we drop it
+          // rather than re-popping a surprise notification.
+          setLastSummary((prev) => (prev ? { ...prev, unlocked: next } : prev));
+          void queryClient.invalidateQueries({ queryKey: ['user'] });
         }
-
-        // Invalidate session list for the dashboard.
+      } else {
+        // Still refresh ngram stats so the dashboard / next-sentence
+        // generation see fresh data.
         void queryClient.invalidateQueries({
-          queryKey: ['sessions', activeProgress.layout_id],
+          queryKey: ['ngramStats', activeProgress.layout_id],
         });
-      } catch (err) {
-        console.error('Failed to save session', err);
       }
-    },
-    [activeProgress, isMainLayout, mode, queryClient, unlockedSet, positions],
-  );
+
+      // Invalidate session list for the dashboard.
+      void queryClient.invalidateQueries({
+        queryKey: ['sessions', activeProgress.layout_id],
+      });
+    } catch (err) {
+      console.error('Failed to save session', err);
+    }
+  }, [activeProgress, isMainLayout, mode, queryClient, unlockedSet, positions, resetSession]);
+
+  // Auto-clear the post-Esc toast after a few seconds. We pick a window
+  // long enough to comfortably cover the session POST + unlock fetch round
+  // trip, so an unlock notice can still land on a still-visible toast.
+  useEffect(() => {
+    if (lastSummary === null) return;
+    const id = setTimeout(() => setLastSummary(null), 6000);
+    return () => clearTimeout(id);
+  }, [lastSummary]);
 
   // ─── Keydown handler ─────────────────────────────────────────────────────
   const handleKeyDown = useCallback(
@@ -352,22 +403,13 @@ export default function PracticePage() {
       const tag = (document.activeElement as HTMLElement | null)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 
-      // After session: Enter advances to next sentence.
-      if (sessionCompleteRef.current) {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          setJustUnlocked(null);
-          resetSession();
-        }
-        return;
-      }
-
+      // Esc ends the current session: flush data, post stats (flow only),
+      // and reset the stream. There is no pause / no completable level.
       if (e.key === 'Escape') {
         e.preventDefault();
-        setIsPaused((p) => !p);
+        void endSession();
         return;
       }
-      if (isPausedRef.current) return;
 
       // Ignore plain modifiers and tab.
       if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab'].includes(e.key)) return;
@@ -397,7 +439,6 @@ export default function PracticePage() {
 
       ngramTrackerRef.current?.recordChar(logicalChar, expected, timeSinceLastMs);
 
-      let newCursor = currentCursor;
       let st = startTimeRef.current;
       if (st === null) {
         st = now;
@@ -405,7 +446,7 @@ export default function PracticePage() {
       }
 
       if (isCorrect) {
-        newCursor = currentCursor + 1;
+        const newCursor = currentCursor + 1;
         setCursor(newCursor);
 
         const minutes = (now - st) / 60_000;
@@ -416,12 +457,16 @@ export default function PracticePage() {
         setLiveWpm(Math.round(wpm));
         setLiveAccuracy(Math.round(accuracy * 100));
 
+        // End of the visible chunk — splice another one on so the user
+        // can keep typing without an interrupt. The cursor will land on
+        // the leading separator space of the new chunk on the next
+        // render, exactly like a normal word boundary.
         if (newCursor === sentenceRef.current.length) {
-          void completeSession(newCursor, currentTotalKeystrokes, st, now);
+          appendNextChunk();
         }
       }
     },
-    [positionMap, completeSession, resetSession],
+    [positionMap, endSession, appendNextChunk],
   );
 
   useEffect(() => {
@@ -488,40 +533,42 @@ export default function PracticePage() {
         ))}
       </div>
 
-      {/* Just-unlocked banner */}
-      {justUnlocked && !sessionComplete && (
+      {/* Transient end-of-session toast (auto-clears after 6s). Shown
+          after Esc or the End button; folds in an unlock notice if one
+          fires before the toast disappears. */}
+      {lastSummary && (
         <div
           role="status"
-          className="mb-4 px-4 py-2 bg-green-900/40 border border-green-600 rounded-lg text-green-300 text-sm"
+          aria-live="polite"
+          className="mb-4 px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm flex items-center gap-3 text-gray-300"
         >
-          New key unlocked: <span className="font-mono font-bold">{justUnlocked}</span>
+          <span className="text-gray-400">
+            {lastSummary.mode === 'flow' ? 'Session saved' : 'Drill ended'}
+          </span>
+          <span className="text-gray-700">·</span>
+          <span className="text-blue-300 font-mono tabular-nums">{lastSummary.wpm} WPM</span>
+          <span className="text-gray-700">·</span>
+          <span className="text-yellow-300 font-mono tabular-nums">
+            {lastSummary.accuracy}% acc
+          </span>
+          {lastSummary.unlocked && (
+            <>
+              <span className="text-gray-700">·</span>
+              <span className="text-green-300">
+                Unlocked <span className="font-mono font-bold">{lastSummary.unlocked}</span>
+              </span>
+            </>
+          )}
         </div>
       )}
 
-      {/* Typing area */}
+      {/* Typing area — no paused / completed overlays. Practice is one
+          indefinite stream; Esc is the only way out. */}
       <div
         className="w-full max-w-2xl bg-gray-900 rounded-2xl p-8 relative"
         role="region"
         aria-label="Typing practice area"
       >
-        {isPaused && (
-          <div className="absolute inset-0 flex items-center justify-center bg-gray-900/90 rounded-2xl z-10">
-            <span className="text-gray-300 text-lg">Paused — press Esc to resume</span>
-          </div>
-        )}
-        {sessionComplete && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/95 rounded-2xl z-10 gap-3">
-            <div className="text-green-400 text-4xl font-bold font-mono">{liveWpm} WPM</div>
-            <div className="text-gray-300 text-xl">{liveAccuracy}% accuracy</div>
-            {justUnlocked && (
-              <div className="text-yellow-300 text-sm">
-                Unlocked <span className="font-mono font-bold">{justUnlocked}</span>!
-              </div>
-            )}
-            <div className="text-gray-500 text-sm mt-4">Press Enter for the next round</div>
-          </div>
-        )}
-
         <div
           className="font-mono text-2xl leading-relaxed tracking-wide"
           aria-live="polite"
@@ -537,12 +584,12 @@ export default function PracticePage() {
             tokenize(charData).map((tok, ti) =>
               tok.kind === 'word' ? (
                 <span key={ti} className="inline-block whitespace-nowrap">
-                  {tok.indices.map((i) => renderChar(charData[i], i, cursor, sessionComplete))}
+                  {tok.indices.map((i) => renderChar(charData[i], i, cursor))}
                 </span>
               ) : (
                 // A whitespace token: render each space char as a plain inline span.
                 // The space content is a literal space so the line can break here.
-                tok.indices.map((i) => renderChar(charData[i], i, cursor, sessionComplete))
+                tok.indices.map((i) => renderChar(charData[i], i, cursor))
               ),
             )
           )}
@@ -566,21 +613,10 @@ export default function PracticePage() {
       <div className="flex gap-3 mt-6">
         <button
           type="button"
-          onClick={() => setIsPaused((p) => !p)}
-          className="px-4 py-2 text-sm text-gray-400 border border-gray-700 rounded-lg hover:border-gray-500 hover:text-gray-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-          aria-pressed={isPaused}
-        >
-          {isPaused ? 'Resume (Esc)' : 'Pause (Esc)'}
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setJustUnlocked(null);
-            resetSession();
-          }}
+          onClick={() => void endSession()}
           className="px-4 py-2 text-sm text-gray-400 border border-gray-700 rounded-lg hover:border-gray-500 hover:text-gray-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
         >
-          Skip
+          End session (Esc)
         </button>
         <button
           type="button"
@@ -593,7 +629,8 @@ export default function PracticePage() {
       </div>
 
       <p className="mt-4 text-xs text-gray-600">
-        Type the text above · Esc to pause · Enter to continue after each round
+        Type freely · Press Esc to end the session
+        {mode === 'flow' ? ' and save your stats' : ''}
       </p>
     </div>
   );
