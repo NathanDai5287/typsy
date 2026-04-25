@@ -117,7 +117,10 @@ export default function DashboardPage(): JSX.Element {
 
   const series = useMemo(() => sessionsAsSeries(sessions ?? []), [sessions]);
   const fingerAgg = useMemo(
-    () => perFingerStats(ngramRows ?? [], fingerMap),
+    () =>
+      perFingerStats(ngramRows ?? [], fingerMap).filter(
+        (f) => f.finger !== 'left_thumb' && f.finger !== 'right_thumb',
+      ),
     [ngramRows, fingerMap],
   );
   const sfb = useMemo(() => sfbRate(ngramRows ?? [], fingerMap), [ngramRows, fingerMap]);
