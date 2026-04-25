@@ -13,6 +13,7 @@ import {
   perFingerStats,
   sessionsAsSeries,
   sfbRate,
+  topSlowNgrams,
   topWeakNgrams,
   totalCharsTyped,
 } from '@typsy/shared';
@@ -113,6 +114,10 @@ export default function DashboardPage() {
   const heatmap = useMemo(() => buildErrorHeatmap(ngramRows ?? []), [ngramRows]);
   const topChars = useMemo(
     () => topWeakNgrams(ngramRows ?? [], 'char2', 10),
+    [ngramRows],
+  );
+  const slowChars = useMemo(
+    () => topSlowNgrams(ngramRows ?? [], 'char2', 10),
     [ngramRows],
   );
   const topWords = useMemo(
@@ -316,8 +321,8 @@ export default function DashboardPage() {
         />
       </section>
 
-      {/* Top weak ngrams */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {/* Top weak / slow ngrams */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <section className="bg-gray-900 rounded-xl p-5">
           <PanelHeading>Top 10 weak bigrams</PanelHeading>
           {topChars.length === 0 ? (
@@ -337,6 +342,39 @@ export default function DashboardPage() {
                     <td className="py-2 font-mono text-white">{n.ngram}</td>
                     <td className="py-2 text-red-400 tabular-nums">
                       {(n.errorRate * 100).toFixed(1)}%
+                    </td>
+                    <td className="py-2 text-right tabular-nums text-gray-400">
+                      {n.hits + n.misses}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+
+        <section className="bg-gray-900 rounded-xl p-5">
+          <PanelHeading>Top 10 slow bigrams</PanelHeading>
+          {slowChars.length === 0 ? (
+            <p className="text-gray-500 text-sm">Not enough data yet.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="text-left text-gray-500 text-xs uppercase tracking-wider">
+                <tr>
+                  <th className="py-2 font-normal">Bigram</th>
+                  <th className="py-2 font-normal">WPM</th>
+                  <th className="py-2 font-normal text-right">Attempts</th>
+                </tr>
+              </thead>
+              <tbody>
+                {slowChars.map((n) => (
+                  <tr key={n.ngram} className="border-t border-gray-800">
+                    <td className="py-2 font-mono text-white">{n.ngram}</td>
+                    <td
+                      className="py-2 text-peach tabular-nums"
+                      title={`${n.meanMs.toFixed(0)} ms / keypress`}
+                    >
+                      {n.wpm.toFixed(1)}
                     </td>
                     <td className="py-2 text-right tabular-nums text-gray-400">
                       {n.hits + n.misses}

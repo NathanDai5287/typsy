@@ -5,6 +5,7 @@ import {
   sfbRate,
   buildErrorHeatmap,
   topWeakNgrams,
+  topSlowNgrams,
   totalCharsTyped,
   dayStreak,
   sessionsAsSeries,
@@ -125,6 +126,51 @@ describe('topWeakNgrams', () => {
     ];
     const top = topWeakNgrams(stats, 'char2', 5);
     expect(top.map((t) => t.ngram)).toEqual(['th']);
+  });
+});
+
+describe('topSlowNgrams', () => {
+  it('ranks by mean keypress time descending', () => {
+    const stats = [
+      row('th', 'char2', 100, 0, 100 * 100), // 100ms/hit  → 120 WPM
+      row('he', 'char2', 50, 0, 50 * 300),   // 300ms/hit  → 40 WPM (slowest)
+      row('an', 'char2', 80, 0, 80 * 150),   // 150ms/hit  → 80 WPM
+    ];
+    const slow = topSlowNgrams(stats, 'char2', 3);
+    expect(slow.map((s) => s.ngram)).toEqual(['he', 'an', 'th']);
+    expect(slow[0].meanMs).toBeCloseTo(300, 5);
+    expect(slow[0].wpm).toBeCloseTo(40, 1);
+    expect(slow[2].wpm).toBeCloseTo(120, 1);
+  });
+
+  it('skips ngrams below minAttempts and rows with no hits', () => {
+    const stats = [
+      row('xy', 'char2', 1, 0, 9999), // 1 attempt → skipped (default minAttempts=5)
+      row('zz', 'char2', 0, 20, 5000), // 0 hits → skipped (can't compute mean)
+      row('th', 'char2', 50, 0, 50 * 200),
+    ];
+    const slow = topSlowNgrams(stats, 'char2', 5);
+    expect(slow.map((s) => s.ngram)).toEqual(['th']);
+  });
+
+  it('ignores other ngram types', () => {
+    const stats = [
+      row('the', 'char3', 100, 0, 100 * 500), // very slow trigram, but wrong type
+      row('th', 'char2', 100, 0, 100 * 100),
+    ];
+    const slow = topSlowNgrams(stats, 'char2', 5);
+    expect(slow.map((s) => s.ngram)).toEqual(['th']);
+  });
+
+  it('limits result to topK', () => {
+    const stats = [
+      row('aa', 'char2', 10, 0, 10 * 100),
+      row('bb', 'char2', 10, 0, 10 * 200),
+      row('cc', 'char2', 10, 0, 10 * 300),
+      row('dd', 'char2', 10, 0, 10 * 400),
+    ];
+    const slow = topSlowNgrams(stats, 'char2', 2);
+    expect(slow.map((s) => s.ngram)).toEqual(['dd', 'cc']);
   });
 });
 
