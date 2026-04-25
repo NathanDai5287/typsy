@@ -4,10 +4,11 @@ You are one of several Devin instances working on this repo simultaneously, each
 
 ## Startup sequence (do these IN ORDER, before anything else)
 1. Read `.devin/knowledge.md` for project context. Do not re-explore the repo to learn its structure — the knowledge file is the source of truth. If something looks wrong or stale, flag it; don't silently work around it.
-2. Run `scripts/devin-locks.sh list` to see what other instances are currently working on.
-3. Compare the user's requested task against active claims. If your task plausibly touches the SAME files or directories as an active claim, STOP. Do not start work. Tell the user: "Task `<active-slug>` is currently working on `<paths>`, which overlaps with what you're asking me to do. Options: (a) wait for it to finish, (b) narrow my scope to non-overlapping files, (c) cancel the other task." Wait for the user's decision.
-4. If clear, claim your scope BEFORE editing anything: `scripts/devin-locks.sh claim <slug> "<one-line description>" "<comma-separated paths/globs you expect to touch>"`. If claim fails due to a race with another instance starting at the same moment, re-read step 3.
-5. Confirm you are on a `devin/<slug>` branch. If not, stop and ask.
+2. **Verify your working directory.** Run `pwd`. It MUST be a path under `../worktrees/<slug>/` matching your slug. Working in the main checkout (the directory containing `.git/` as a real directory rather than as a `gitdir:` pointer) is FORBIDDEN, even when no other instance is running — `git switch` there will clobber any sibling worktree's checkout. If you are in the main checkout, STOP. Ask the human to run `scripts/devin-spawn.sh <slug>` and start a fresh Devin session in the printed worktree path. Do not try to "fix" it from here.
+3. Run `scripts/devin-locks.sh list` to see what other instances are currently working on.
+4. Compare the user's requested task against active claims. If your task plausibly touches the SAME files or directories as an active claim, STOP. Do not start work. Tell the user: "Task `<active-slug>` is currently working on `<paths>`, which overlaps with what you're asking me to do. Options: (a) wait for it to finish, (b) narrow my scope to non-overlapping files, (c) cancel the other task." Wait for the user's decision.
+5. If clear, claim your scope BEFORE editing anything: `scripts/devin-locks.sh claim <slug> "<one-line description>" "<comma-separated paths/globs you expect to touch>"`. The lock script will refuse the claim if another slug is already claimed from this same working directory — that's a hard signal you skipped step 2. Do NOT bypass it.
+6. Confirm you are on a `devin/<slug>` branch. If not, stop and ask.
 
 ## During the task
 - Stay inside your claimed scope. If you discover you need to edit a file outside your claim, run `scripts/devin-locks.sh list` again — if no one else has it, run `claim` again to extend your scope; if someone does, STOP and report.
@@ -16,14 +17,19 @@ You are one of several Devin instances working on this repo simultaneously, each
 - Never run `git push --force`, `git rebase main`, or anything that rewrites shared history. Use `git merge origin/main` to pull updates in.
 - High-traffic shared files (package.json, lockfiles, shared types files, top-level config, migrations, README) are extra-dangerous — even if your claim covers them, pause and confirm with the human before editing.
 - Touch the minimum number of files needed. Do NOT do drive-by refactors, formatting passes, or import reorganizations outside your task.
-- After completing each change, post a one-sentence reminder of what just changed (e.g. "Added is_active flag to user_layout_progress and wired the toggle into LayoutsPage") and then ask the user: "Want me to commit and push this?" Do not run `git commit` or `git push` until the user says yes. When approved, prefix every commit message with `[<slug>]` and push to `origin/devin/<slug>`.
+- After completing each change, post a one-sentence reminder of what just changed (e.g. "Added is_active flag to user_layout_progress and wired the toggle into LayoutsPage") and then ask the user: "Want me to commit and push this?" Do not run `git commit` or `git push` until the user says yes. When approved, do all three of the following back-to-back: (1) commit with `[<slug>]` prefix, (2) push to `origin/devin/<slug>`, (3) `scripts/devin-locks.sh release <slug>` to free your claim. The lock represents "work in flight in this worktree" — once your changes are on the remote, the lock is no longer needed. `release` is idempotent, so subsequent CI-fix pushes don't need to re-claim.
 - If tests fail on `main` (not caused by you), STOP and report — do not "fix" unrelated breakage.
+- CI runs `pnpm install --frozen-lockfile + pnpm build + pnpm test` automatically on every PR push via `.github/workflows/ci.yml`. If CI fails, the workflow comments with a link to the run logs and applies the `status: failing` label. Fix the failure and push again — do not request `devin-review` until CI is green.
 
 ## Shutdown sequence (do these IN ORDER when the task is complete)
 1. Run the verification sequence from `.devin/knowledge.md`.
 2. If you learned something future instances should know (new gotcha, missing convention, wrong path), append a note to `.devin/knowledge.md` as part of your PR.
-3. Push the branch and open a DRAFT PR against `main` titled `[<slug>] <one-line summary>`. Do NOT mark ready for review and do NOT merge — the human integrator handles all merges serially.
-4. Run `scripts/devin-locks.sh release <slug>` to free your claim. This is REQUIRED — do not skip it even if the task failed or was cancelled. If you are abandoning the task without a PR, still release the lock.
+3. Push the branch and open a DRAFT PR against `main` titled `[<slug>] <one-line summary>`. CI runs automatically on every push:
+   - Do NOT apply the `devin-review` label yourself. The human applies it once they've reviewed the diff; that's their explicit "merge it" signal.
+   - Do NOT mark the PR ready, run `gh pr merge`, or rebase `main` yourself. Once a human applies `devin-review` and CI is green, the workflow marks it ready, enables auto-merge (merge commit), and deletes the branch.
+   - If CI is red, the workflow comments with the failing run URL and applies `status: failing`. Fix and re-push; do not ask for `devin-review` until green.
+   - If the workflow detects a merge conflict at auto-merge time, it removes `devin-review`, applies `merge-conflict`, and asks you to rebase. Do that, push, and the human can re-apply `devin-review`.
+4. Your lock should already be released (it gets released in the commit/push step above). Run `scripts/devin-locks.sh list` to confirm — if your slug is still listed (e.g. you abandoned the task without ever pushing), run `scripts/devin-locks.sh release <slug>`. Release is idempotent.
 
 ## If you crash or get interrupted
-The user can run `scripts/devin-locks.sh force-unlock <slug>` to clean up. Locks auto-expire after 8 hours, but don't rely on that.
+The user can run `scripts/devin-locks.sh force-unlock <slug>` to clean up a single stale claim. Locks auto-expire after 8 hours, but don't rely on that. If the lock file is in a bad state across the board (e.g. several crashed sessions, weird artifacts) and the user has confirmed no Devin instances are running, they can run `scripts/devin-locks.sh reset` to wipe every claim at once. Never run `reset` while another instance is mid-task.

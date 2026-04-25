@@ -44,9 +44,13 @@ Usage: $(basename "$0") <command> [args]
 Commands:
   list                                       Print active claims (auto-prunes >8h-old entries)
   claim <slug> <scope-desc> <paths>          Add a claim. <paths> = comma-separated.
-                                             Fails (exit 1) if any path overlaps an existing claim.
+                                             Fails (exit 1) if any path overlaps an existing claim
+                                             OR if another claim already exists from this working
+                                             directory (two instances must not share a worktree).
   release <slug>                             Remove claim for <slug>. Idempotent.
   force-unlock <slug>                        Remove claim for <slug>; warn (for crashed sessions).
+  reset                                      Wipe all claims. Use only when no Devin instances are
+                                             running — see the protocol's recovery section.
 
 Lock file: ${LOCK_FILE}
 EOF
@@ -216,6 +220,22 @@ def cmd_claim(args: list[str]) -> int:
                 )
                 return 1
 
+        # Refuse a second claim from the same working directory — git switch
+        # in a shared working tree clobbers any other instance's checkout, so
+        # two instances must always live in separate git worktrees.
+        if CALLER_CWD:
+            for t in data["tasks"]:
+                if t.get("worktree") and t["worktree"] == CALLER_CWD:
+                    print(
+                        f"ERROR: slug {t['slug']!r} is already claimed from this working directory "
+                        f"({CALLER_CWD}). Two instances must NEVER share a working tree — `git switch` "
+                        f"there will clobber the other instance's checkout. Spawn a separate worktree "
+                        f"with `scripts/devin-spawn.sh <new-slug>`, `cd` into the printed path, and "
+                        f"start your Devin session there.",
+                        file=sys.stderr,
+                    )
+                    return 1
+
         conflicts = []
         for t in data["tasks"]:
             hits = overlaps(paths, t.get("paths", []))
@@ -292,6 +312,29 @@ def cmd_release(args: list[str], force: bool = False) -> int:
     return 0
 
 
+def cmd_reset(args: list[str]) -> int:
+    if args:
+        print("ERROR: `reset` takes no arguments", file=sys.stderr)
+        return 2
+
+    with open_locked() as f:
+        data = read_data(f)
+        slugs = [t.get("slug") for t in data.get("tasks", [])]
+        n = len(slugs)
+        data["tasks"] = []
+        write_data(f, data)
+
+    if n == 0:
+        print("(already empty)")
+    else:
+        print(
+            f"WARNING: reset wiped {n} active claim(s): {', '.join(repr(s) for s in slugs)}",
+            file=sys.stderr,
+        )
+        print(f"reset {n} claim(s)")
+    return 0
+
+
 def main() -> int:
     if len(sys.argv) < 2:
         print("ERROR: missing subcommand", file=sys.stderr)
@@ -305,6 +348,8 @@ def main() -> int:
         return cmd_release(rest, force=False)
     if sub == "force-unlock":
         return cmd_release(rest, force=True)
+    if sub == "reset":
+        return cmd_reset(rest)
     print(f"ERROR: unknown subcommand {sub!r}", file=sys.stderr)
     return 2
 
@@ -332,6 +377,10 @@ case "$cmd" in
     force-unlock)
         if [ $# -ne 1 ]; then usage; fi
         run_py force-unlock "$1"
+        ;;
+    reset)
+        if [ $# -ne 0 ]; then usage; fi
+        run_py reset
         ;;
     -h|--help|help)
         usage

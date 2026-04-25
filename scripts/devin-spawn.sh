@@ -66,15 +66,18 @@ echo "→ creating worktree at $WORKTREE_DIR (branch $BRANCH off $BASE)…"
 git worktree add -b "$BRANCH" "$WORKTREE_DIR" "$BASE"
 
 echo
-echo "✓ worktree ready"
+echo "================================================================"
+echo "  Worktree ready: $WORKTREE_DIR"
+echo "  Branch:         $BRANCH"
+echo "================================================================"
+echo
+echo "  IMPORTANT: cd into the worktree BEFORE starting your Devin session."
+echo "  Two instances must never share a working tree — git switch in"
+echo "  one will clobber the other's checkout."
+echo
+echo "Run, in this order:"
 echo
 echo "  cd $WORKTREE_DIR"
-echo
-echo "Before you start a Devin session in there, run:"
-echo
 echo "  $REPO_ROOT/scripts/devin-locks.sh list"
-echo
-echo "to see what other instances are already working on. Then have Devin claim"
-echo "its scope with:"
-echo
 echo "  $REPO_ROOT/scripts/devin-locks.sh claim $SLUG \"<one-line description>\" \"<paths>\""
+echo "  # ... start Devin here, in this directory ..."
