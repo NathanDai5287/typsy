@@ -1,5 +1,5 @@
-import { wordsUsingOnly, BIGRAM_FREQ, CHAR_FREQ } from './wordList.js';
-import { backoffErrorRate, weaknessScore, type NgramIndex } from './ngramStats.js';
+import { wordsUsingOnly } from './wordList.js';
+import { backoffErrorRate, type NgramIndex } from './ngramStats.js';
 
 export interface FlowOptions {
   /** Set of allowed lowercase chars (the user's unlocked keys). */
@@ -9,70 +9,94 @@ export interface FlowOptions {
   /** Number of words to emit (default 20). */
   numWords?: number;
   /**
-   * Softmax temperature applied to MAX-normalized scores (lower = greedier).
-   * 1.0 ≈ near-uniform, 0.1 ≈ heavy concentration on the top scorers. 0.4 is
-   * a moderate default that lets the user's weakness signal actually steer
-   * sampling without collapsing to the single highest-scoring word, while
-   * still putting a bit of weight on the tail of the top-K pool so rarer
-   * (lower-weakness) words also show up.
+   * Softmax temperature applied to MAX-normalized scores within a length
+   * bucket (lower = greedier). 0.4 is a moderate default that lets the
+   * user's weakness signal actually steer sampling without collapsing to
+   * the single highest-scoring word in a bucket.
    */
   temperature?: number;
-  /** Top-K candidate pool to sample from (default 60). */
-  topK?: number;
-  /** Recently shown words to penalize (set to apply novelty decay). */
+  /**
+   * For each length bucket, keep the top-K most painful words and sample
+   * from those. Concentrates emissions on the user's actual weak spots
+   * within a given length while length variety still comes from the
+   * outer stratification step. Default 20.
+   */
+  topKPerLength?: number;
+  /** Min word length to include (default 4). */
+  minLength?: number;
+  /** Max word length to include (default 12). */
+  maxLength?: number;
+  /**
+   * Words to treat as already-seen (one decay step each). Combine with
+   * the per-call internal emit-count tracking to penalize words shown in
+   * earlier flow lines.
+   */
   recent?: ReadonlySet<string>;
-  /** Penalty multiplier for recent words (default 0.2; lower = harsher). */
+  /**
+   * Per-emit decay applied to a word's weight: `weight × decay^count`,
+   * where `count` includes both `recent` (one step) and how many times
+   * the word has already been emitted in the current call. 0.2 means the
+   * second emit of a word is only 20% as likely as the first, the third
+   * 4%, etc. — strong enough that small candidate buckets cycle through
+   * variety naturally rather than repeating the top word back-to-back.
+   * Default 0.2.
+   */
   recentDecay?: number;
   /** Random source (injectable for tests). */
   rng?: () => number;
 }
 
 /**
- * Score a word as the AVERAGE per-bigram weakness:
+ * Score a word as the SUM of per-bigram smoothed user error rates plus
+ * a length-scaled per-word error rate:
  *
- *     score(word) = mean_b  weaknessScore(bigram_err(b) + word_err, bigram_freq(b))
+ *     score(word) = Σ_b user_err_rate(bigram_b)
+ *                 + length(word) × user_err_rate(word)
  *
- *   - bigram_err(b)    = your smoothed error rate on bigram b (`char2` ngrams).
- *   - word_err         = your smoothed error rate on this exact word
- *                        (`word1` ngrams, tracked on every space).
- *   - bigram_freq(b)   = unconditional probability of b in the corpus.
+ * We deliberately do NOT multiply by English-corpus bigram frequency.
+ * The most common English bigrams (`th`, `he`, `in`, `er`, `an`, `re`,
+ * `on`, `at`, …) are made almost entirely of letters that sit on the
+ * Colemak home row, so multiplying by corpus frequency caused
+ * cold-start flow to collapse onto short home-row-only words the user
+ * already types fluently. With frequency dropped, words score purely on
+ * "how badly does this user actually miss the bigrams in this word"
+ * (plus the per-word miss rate as a separate signal).
  *
- * Averaging (rather than summing) keeps long and short words on the same
- * footing — otherwise a word's score grows linearly with its length and
- * cold-start sampling collapses onto multi-syllable monsters. The user's
- * per-word error rate is added to every bigram term so a word you've
- * personally fumbled has all of its bigrams "lit up", lifting it as a unit.
- *
- * Length-1 words have no bigrams, so the average collapses to the analogous
- * unigram term using CHAR_FREQ and the `char1` error rate.
+ * Sum (rather than mean) is chosen because length-stratified sampling
+ * (see `generateFlowLine`) only ever ranks words against others of the
+ * SAME length — so the length-grows-the-score concern that motivated
+ * averaging in the prior implementation does not apply: every word in
+ * a single bucket has the same number of bigrams contributing to its
+ * sum.
  */
 function scoreWord(word: string, userIndex: NgramIndex): number {
   const wordErr = backoffErrorRate(userIndex, word, 'word1');
-
   if (word.length < 2) {
-    const charFreq = CHAR_FREQ.get(word) ?? 0;
     const charErr = backoffErrorRate(userIndex, word, 'char1');
-    return weaknessScore(charErr + wordErr, charFreq);
+    return charErr + wordErr;
   }
-  let s = 0;
+  let sum = 0;
   for (let i = 0; i < word.length - 1; i++) {
     const bigram = word.slice(i, i + 2);
-    const bigramErr = backoffErrorRate(userIndex, bigram, 'char2');
-    const freq = BIGRAM_FREQ.get(bigram) ?? 0;
-    s += weaknessScore(bigramErr + wordErr, freq);
+    sum += backoffErrorRate(userIndex, bigram, 'char2');
   }
-  return s / (word.length - 1);
+  return sum + word.length * wordErr;
 }
 
 /**
  * Weighted sample with softmax over MAX-normalized weights, so the
- * `temperature` parameter has a scale-invariant meaning regardless of how
- * large or small the absolute score values happen to be.
+ * `temperature` parameter has a scale-invariant meaning regardless of
+ * how large or small the absolute score values happen to be.
  *
- * Concretely: normalize so max weight → 1, then apply softmax with the given
- * temperature. Lower temperature = greedier; temperature → ∞ ≈ uniform.
+ * Concretely: normalize so max weight → 1, then apply softmax with the
+ * given temperature. Lower temperature = greedier; temperature → ∞ ≈ uniform.
  */
-function softmaxSample<T>(items: T[], weights: number[], temperature: number, rng: () => number): T {
+function softmaxSample<T>(
+  items: readonly T[],
+  weights: readonly number[],
+  temperature: number,
+  rng: () => number,
+): T {
   if (items.length === 0) throw new Error('softmaxSample: empty items');
   if (items.length === 1) return items[0];
 
@@ -91,64 +115,99 @@ function softmaxSample<T>(items: T[], weights: number[], temperature: number, rn
 }
 
 /**
- * Generate a flow-mode practice line: real English words composed of unlocked
- * letters, weighted toward the user's weak ngrams (spec §6.6).
+ * Generate a flow-mode practice line: real English words composed of
+ * unlocked letters, with **length-stratified weakness sampling** (spec
+ * §6.6, refined).
  *
- *   1. Pre-filter the bundled word list to words using only `allowed` chars
- *      (and length ≥ 3, to avoid corpus noise gaming the per-bigram score).
- *   2. Score each word with `scoreWord`: average per-bigram weakness with
- *      the user's per-WORD error rate added on top of every bigram term.
- *   3. Take the top-K, then sample with softmax (max-normalized, so the
- *      `temperature` knob has a stable meaning regardless of score scale).
- *   4. Apply novelty decay: penalize words in `recent`.
- *   5. Repeat until `numWords` are emitted; join with spaces.
+ *   1. Filter the bundled top-10k word list to words whose chars are
+ *      all `allowed` and whose length is in `[minLength, maxLength]`.
+ *   2. Bucket candidates by length. For each bucket, score every word
+ *      with `scoreWord` and keep the top-`topKPerLength` most painful.
+ *   3. For each emitted word: pick a length L uniformly at random from
+ *      the lengths that have any candidates, then softmax-sample a
+ *      word from that bucket's top-K pool. A word's weight is
+ *      multiplied by `recentDecay^N` where N is its emit count so far
+ *      in this call (plus one if the word is in `recent`), so small
+ *      buckets naturally cycle through their words rather than
+ *      repeating the top scorer.
+ *
+ * Stratifying on length guarantees the output mixes 4-, 7-, 11-letter
+ * words rather than collapsing to whatever length wins the global
+ * scoring. Within a single length bucket, sampling is dominated by the
+ * user's actual error signal (no corpus-frequency multiplier — that's
+ * what made cold-start flow look home-row-heavy on Colemak).
+ *
+ * With no user data, every bigram error rate is the Bayesian prior
+ * (~0.1), so all words in a bucket score equally and sampling is
+ * effectively uniform within each length — a much better cold-start
+ * than "always emit the most-common short home-row words".
  */
 export function generateFlowLine({
   allowed,
   userIndex,
   numWords = 20,
   temperature = 0.4,
-  topK = 60,
+  topKPerLength = 20,
+  minLength = 4,
+  maxLength = 12,
   recent,
   recentDecay = 0.2,
   rng = Math.random,
 }: FlowOptions): string {
-  // minLength 3 — shorter "words" in the corpus are dominated by web-crawl
-  // noise (single-letter bullets, two-letter abbreviations like "ver", "ind"),
-  // and they tend to game the per-bigram averaging by being entirely composed
-  // of common bigrams. Real practice should be on actual words.
-  const candidates = wordsUsingOnly(allowed, /* minLength */ 3);
+  const lo = Math.max(1, minLength);
+  const hi = Math.max(lo, maxLength);
+
+  const candidates = wordsUsingOnly(allowed, lo);
   if (candidates.length === 0) return '';
 
-  const scored = candidates.map(({ word }) => {
-    let score = scoreWord(word, userIndex);
-    if (recent && recent.has(word)) score *= recentDecay;
-    return { word, score };
-  });
-  scored.sort((a, b) => b.score - a.score);
-  const pool = scored.slice(0, Math.min(topK, scored.length));
+  type ScoredWord = { word: string; score: number };
+  const poolByLength = new Map<number, ScoredWord[]>();
+  for (const { word } of candidates) {
+    if (word.length > hi) continue;
+    let bucket = poolByLength.get(word.length);
+    if (!bucket) {
+      bucket = [];
+      poolByLength.set(word.length, bucket);
+    }
+    bucket.push({ word, score: scoreWord(word, userIndex) });
+  }
+  for (const bucket of poolByLength.values()) {
+    bucket.sort((a, b) => b.score - a.score);
+    if (bucket.length > topKPerLength) bucket.length = topKPerLength;
+  }
+
+  // Drop length buckets that have only one candidate: the recent-decay
+  // mechanism can't redirect picks within a 1-item softmax, so a tiny
+  // bucket would just spam its single word every time L was chosen. If
+  // EVERY bucket has only one candidate (very restricted allowed set),
+  // fall back to including them all so we still produce output.
+  let lengths = Array.from(poolByLength.keys()).filter(
+    (L) => poolByLength.get(L)!.length >= 2,
+  );
+  if (lengths.length === 0) lengths = Array.from(poolByLength.keys());
+  if (lengths.length === 0) return '';
+
+  // Per-call emit-count map (seeded from `recent`). Each emit of a word
+  // multiplies its weight by `recentDecay`, so within a single call we
+  // cycle through the bucket rather than spamming the top scorer.
+  const emitCount = new Map<string, number>();
+  if (recent) for (const w of recent) emitCount.set(w, 1);
 
   const out: string[] = [];
-  let lastWord: string | null = null;
 
   for (let i = 0; i < numWords; i++) {
-    // Avoid immediate same-word repeats by resampling once.
-    let pick = softmaxSample(
-      pool.map((p) => p.word),
-      pool.map((p) => p.score),
-      temperature,
-      rng,
-    );
-    if (pick === lastWord && pool.length > 1) {
-      pick = softmaxSample(
-        pool.map((p) => p.word),
-        pool.map((p) => p.score),
-        temperature,
-        rng,
-      );
-    }
+    const L = lengths[Math.floor(rng() * lengths.length)];
+    const pool = poolByLength.get(L)!;
+
+    const items = pool.map((p) => p.word);
+    const weights = pool.map((p) => {
+      const c = emitCount.get(p.word) ?? 0;
+      return c === 0 ? p.score : p.score * Math.pow(recentDecay, c);
+    });
+
+    const pick = softmaxSample(items, weights, temperature, rng);
     out.push(pick);
-    lastWord = pick;
+    emitCount.set(pick, (emitCount.get(pick) ?? 0) + 1);
   }
 
   return out.join(' ');
