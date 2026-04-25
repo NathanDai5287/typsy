@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  deleteLayout,
   fetchLayoutSummary,
   postActiveLayout,
   postOnboarding,
   postProgressUpdate,
 } from '../lib/api.ts';
 import type { KeyPosition, LayoutSummary, FingerLabel } from '@typsy/shared';
-import { COL_TO_FINGER } from '@typsy/shared';
+import { COL_TO_FINGER, SEEDED_LAYOUT_NAMES } from '@typsy/shared';
 import KeyboardVisual from '../components/KeyboardVisual.tsx';
 
 function defaultFingering(positions: KeyPosition[]): Record<string, FingerLabel> {
@@ -53,6 +54,13 @@ export default function LayoutsPage() {
     onSuccess: refreshAll,
   });
 
+  const remove = useMutation({
+    mutationFn: (vars: { layout_id: number }) => deleteLayout(vars.layout_id),
+    onMutate: (vars) => setPendingId(vars.layout_id),
+    onSettled: () => setPendingId(null),
+    onSuccess: refreshAll,
+  });
+
   if (isLoading || !summaries) {
     return (
       <div className="flex h-[60vh] items-center justify-center text-gray-400">
@@ -87,6 +95,7 @@ export default function LayoutsPage() {
                 fingering_map_json: JSON.stringify(defaultFingering(positions)),
               });
             }}
+            onDelete={() => remove.mutate({ layout_id: s.layout.id })}
           />
         ))}
       </div>
@@ -102,11 +111,21 @@ interface LayoutCardProps {
   onSetActive: () => void;
   onSetMain: (value: boolean) => void;
   onSetUp: () => void;
+  onDelete: () => void;
 }
 
-function LayoutCard({ summary, isPending, onSetActive, onSetMain, onSetUp }: LayoutCardProps) {
+function LayoutCard({
+  summary,
+  isPending,
+  onSetActive,
+  onSetMain,
+  onSetUp,
+  onDelete,
+}: LayoutCardProps) {
   const positions: KeyPosition[] = JSON.parse(summary.layout.key_positions_json);
   const totalAlpha = positions.filter((p) => /^[a-z]$/.test(p.char)).length;
+  const isSeeded = SEEDED_LAYOUT_NAMES.has(summary.layout.name);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const status = !summary.has_progress
     ? 'Not set up'
@@ -174,45 +193,82 @@ function LayoutCard({ summary, isPending, onSetActive, onSetMain, onSetUp }: Lay
       </div>
 
       {/* Actions */}
-      <div className="flex flex-wrap gap-2 mt-1">
-        {!summary.has_progress ? (
-          <button
-            type="button"
-            onClick={onSetUp}
-            disabled={isPending}
-            className="px-3 py-1.5 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-crust font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-          >
-            {isPending ? 'Setting up…' : 'Set up'}
-          </button>
-        ) : (
-          <>
-            {!summary.is_active && (
-              <button
-                type="button"
-                onClick={onSetActive}
-                disabled={isPending}
-                className="px-3 py-1.5 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-crust font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-              >
-                {isPending ? 'Switching…' : 'Switch to'}
-              </button>
-            )}
+      {confirmingDelete ? (
+        <div className="mt-1 rounded-lg border border-red-900/60 bg-red-950/30 px-3 py-2.5 flex flex-col gap-2">
+          <p className="text-sm text-red-200">
+            Delete <span className="font-semibold">{summary.layout.name}</span>? All sessions
+            and ngram data on this layout will be permanently erased.
+          </p>
+          <div className="flex gap-2">
             <button
               type="button"
-              onClick={() => onSetMain(!summary.is_main_layout)}
+              onClick={() => setConfirmingDelete(false)}
               disabled={isPending}
-              aria-pressed={summary.is_main_layout}
-              className={[
-                'px-3 py-1.5 text-sm rounded-lg border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400',
-                summary.is_main_layout
-                  ? 'border-yellow-600 text-yellow-300 bg-yellow-900/30 hover:bg-yellow-900/50'
-                  : 'border-gray-700 text-gray-300 hover:border-gray-500',
-              ].join(' ')}
+              className="px-3 py-1.5 text-sm rounded-lg border border-gray-700 text-gray-300 hover:border-gray-500 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
             >
-              {summary.is_main_layout ? 'Mark as learning' : 'Mark as daily driver'}
+              Cancel
             </button>
-          </>
-        )}
-      </div>
+            <button
+              type="button"
+              onClick={onDelete}
+              disabled={isPending}
+              className="px-3 py-1.5 text-sm rounded-lg bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+            >
+              {isPending ? 'Deleting…' : 'Delete'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-2 mt-1">
+          {!summary.has_progress ? (
+            <button
+              type="button"
+              onClick={onSetUp}
+              disabled={isPending}
+              className="px-3 py-1.5 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-crust font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+            >
+              {isPending ? 'Setting up…' : 'Set up'}
+            </button>
+          ) : (
+            <>
+              {!summary.is_active && (
+                <button
+                  type="button"
+                  onClick={onSetActive}
+                  disabled={isPending}
+                  className="px-3 py-1.5 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-crust font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                >
+                  {isPending ? 'Switching…' : 'Switch to'}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => onSetMain(!summary.is_main_layout)}
+                disabled={isPending}
+                aria-pressed={summary.is_main_layout}
+                className={[
+                  'px-3 py-1.5 text-sm rounded-lg border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400',
+                  summary.is_main_layout
+                    ? 'border-yellow-600 text-yellow-300 bg-yellow-900/30 hover:bg-yellow-900/50'
+                    : 'border-gray-700 text-gray-300 hover:border-gray-500',
+                ].join(' ')}
+              >
+                {summary.is_main_layout ? 'Mark as learning' : 'Mark as daily driver'}
+              </button>
+            </>
+          )}
+          {!isSeeded && (
+            <button
+              type="button"
+              onClick={() => setConfirmingDelete(true)}
+              disabled={isPending}
+              className="ml-auto px-3 py-1.5 text-sm rounded-lg border border-red-900/60 text-red-300 hover:bg-red-900/30 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+            >
+              Delete
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Help text */}
       {!summary.has_progress && (
