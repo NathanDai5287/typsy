@@ -1,3 +1,5 @@
+> If you are an AI agent, read `.devin/knowledge.md` and `.devin/PARALLEL_PROTOCOL.md` before doing anything.
+
 # Typsy — Keyboard Layout Trainer
 
 A keyboard-navigable web app for learning new keyboard layouts. Currently supports QWERTY, Colemak, and Graphite.
