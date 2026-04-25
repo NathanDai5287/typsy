@@ -6,7 +6,8 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "seed:dev": "tsx scripts/seed-dev-data.ts"
   },
   "dependencies": {
     "@typsy/shared": "workspace:*",
