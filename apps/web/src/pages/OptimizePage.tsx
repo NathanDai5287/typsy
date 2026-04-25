@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   fetchUser,
@@ -174,11 +174,7 @@ export default function OptimizePage(): JSX.Element {
     return <div className="flex h-[60vh] items-center justify-center text-fg3">loading…</div>;
   }
   if (!activeProgress || !activeLayout) {
-    return (
-      <div className="flex h-[60vh] items-center justify-center text-fg3">
-        Onboard a layout first.
-      </div>
-    );
+    return <Navigate to="/onboarding" replace />;
   }
 
   return (
