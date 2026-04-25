@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, useLayoutEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   fetchUser,
@@ -68,8 +68,10 @@ function renderChar(cd: CharData, i: number, cursor: number): JSX.Element {
     .join(' ');
   // For spaces: render literal space so the line can break here. The
   // cursor underline still appears under the (monospace-width) space.
+  // The `data-cursor` attribute lets the scroll effect locate the cursor
+  // glyph in the DOM without threading a per-char ref through every span.
   return (
-    <span key={i} className={cls}>
+    <span key={i} className={cls} data-cursor={i === cursor ? 'true' : undefined}>
       {cd.char === ' ' ? ' ' : cd.char}
     </span>
   );
@@ -86,16 +88,20 @@ function buildSentence(
   }
   const userIndex = indexNgramStats(ngramRows);
   if (mode === 'drill') {
+    // Each appended chunk needs to comfortably outrun the visible window
+    // (~3 lines × ~50 chars/line) so the user is never "caught up to the
+    // generator" — `appendNextChunk` fires eagerly anyway, this just
+    // keeps the prefetch budget a couple lines ahead.
     return generateDrillSequence({
       allowed: unlocked,
       userIndex,
-      length: 50,
+      length: 100,
     });
   }
   return generateFlowLine({
     allowed: unlocked,
     userIndex,
-    numWords: 12,
+    numWords: 20,
   });
 }
 
@@ -218,13 +224,30 @@ export default function PracticePage() {
   startTimeRef.current = startTime;
   sentenceRef.current = sentence;
 
+  // ─── Monkeytype-style scrolling window ───────────────────────────────────
+  // The visible typing area is fixed at 3 line-heights tall. As the user
+  // types past line 0, we translate the inner text up so the cursor stays
+  // on visible line 1 (middle of 3) — completed lines scroll off the top
+  // and upcoming lines stream in at the bottom from `appendNextChunk`.
+  // `streamKey` is bumped on every reset so the inner div remounts and the
+  // transform snaps to 0 without animating from the previous offset.
+  const innerRef = useRef<HTMLDivElement>(null);
+  const [scrollY, setScrollY] = useState(0);
+  const [streamKey, setStreamKey] = useState(0);
+
   // ─── Reset session ───────────────────────────────────────────────────────
   const resetSession = useCallback(() => {
     if (!activeProgress || unlockedSet.size === 0 || (ngramRows == null)) {
       // Wait for data; the load effect will retry.
       return;
     }
-    const s = buildSentence(mode, unlockedSet, ngramRows);
+    // Pre-fill the buffer with two chunks so the very first paint already
+    // shows a multi-line preview ahead of the cursor. The handler's eager
+    // appendNextChunk keeps it topped up after that.
+    const s =
+      buildSentence(mode, unlockedSet, ngramRows) +
+      ' ' +
+      buildSentence(mode, unlockedSet, ngramRows);
     setSentence(s);
     setCharData(initCharData(s));
     setCursor(0);
@@ -233,6 +256,12 @@ export default function PracticePage() {
     setLiveWpm(0);
     setLiveAccuracy(100);
     lastKeypressTimeRef.current = null;
+    // Snap the scrolling window back to the top of the new buffer.
+    // Bumping `streamKey` remounts the inner element so the transform
+    // resets without an awkward "sweep down" animation from the
+    // previous session's offset.
+    setScrollY(0);
+    setStreamKey((k) => k + 1);
 
     ngramTrackerRef.current?.stop().catch(console.error);
     // Drill is practice-only: no n-gram tracking, no session row, no unlocks.
@@ -265,6 +294,48 @@ export default function PracticePage() {
       ngramTrackerRef.current?.stop().catch(console.error);
     };
   }, []);
+
+  // ─── Track cursor's line position and scroll the inner content ───────────
+  /**
+   * After every cursor or buffer change, find the cursor span in the DOM,
+   * compute its natural line index inside the inner content, and translate
+   * the inner element so the cursor sits on visible line 1 (middle of the
+   * 3-line window). Result: completed lines scroll smoothly off the top
+   * while upcoming lines stream in below — Monkeytype-style.
+   *
+   * `getBoundingClientRect` is robust to the parent's existing transform
+   * (the cursor and its parent are translated by the same amount, so the
+   * delta is the natural offset).
+   */
+  useLayoutEffect(() => {
+    const innerEl = innerRef.current;
+    if (!innerEl) return;
+    const cursorEl = innerEl.querySelector<HTMLElement>('[data-cursor="true"]');
+    if (!cursorEl) return;
+
+    const innerRect = innerEl.getBoundingClientRect();
+    const cursorRect = cursorEl.getBoundingClientRect();
+    const cursorTop = cursorRect.top - innerRect.top;
+
+    // Resolve line-height in px. `getComputedStyle.lineHeight` returns
+    // `'normal'` if the author left it unset — fall back to 1.5 × font-size
+    // in that case so we still get a sensible scroll step.
+    const lhStr = getComputedStyle(innerEl).lineHeight;
+    let lineHeight = parseFloat(lhStr);
+    if (!Number.isFinite(lineHeight) || lineHeight <= 0) {
+      lineHeight = parseFloat(getComputedStyle(innerEl).fontSize) * 1.5;
+    }
+    if (!Number.isFinite(lineHeight) || lineHeight <= 0) return;
+
+    const cursorLine = Math.round(cursorTop / lineHeight);
+    // Keep the cursor on visible line 1 of 3 once past line 0. Lines 0
+    // doesn't scroll; from line 1 onwards we scroll one line at a time so
+    // the cursor word always has one finished line above it and one
+    // upcoming line below it.
+    const desiredScrollLine = Math.max(0, cursorLine - 1);
+    const desired = desiredScrollLine * lineHeight;
+    setScrollY((prev) => (Math.abs(prev - desired) < 0.5 ? prev : desired));
+  }, [cursor, charData.length]);
 
   // ─── Append more content when the cursor runs out ────────────────────────
   /**
@@ -457,11 +528,13 @@ export default function PracticePage() {
         setLiveWpm(Math.round(wpm));
         setLiveAccuracy(Math.round(accuracy * 100));
 
-        // End of the visible chunk — splice another one on so the user
-        // can keep typing without an interrupt. The cursor will land on
-        // the leading separator space of the new chunk on the next
-        // render, exactly like a normal word boundary.
-        if (newCursor === sentenceRef.current.length) {
+        // Eagerly prefetch more content well before the cursor reaches the
+        // end of the buffer, so the user always sees several lines of
+        // upcoming text below the cursor (Monkeytype-style). Threshold is
+        // generous — bigger than one chunk worth — so even a momentary
+        // late append still keeps the visible window full.
+        const remaining = sentenceRef.current.length - newCursor;
+        if (remaining < 200) {
           appendNextChunk();
         }
       }
@@ -562,15 +635,34 @@ export default function PracticePage() {
         </div>
       )}
 
-      {/* Typing area — no paused / completed overlays. Practice is one
-          indefinite stream; Esc is the only way out. */}
+      {/* Typing area — fixed-height 3-line window that scrolls
+          Monkeytype-style. The outer div sets the font size + line-height
+          so its child line-box height matches the explicit calc below,
+          and `p-8` adds the 4rem of padding (2rem top + 2rem bottom) the
+          calc accounts for. The inner div is translated up as the cursor
+          advances so completed lines scroll off the top while upcoming
+          lines stream in at the bottom from `appendNextChunk`.
+
+          Height math: text-2xl = 1.5rem font-size, leading-relaxed =
+          1.625 → per-line = 2.4375rem → 3 lines = 7.3125rem, plus 4rem
+          for p-8's vertical padding = 11.3125rem total. Using calc keeps
+          the source readable; we deliberately avoid the `lh` unit since
+          it isn't supported by older Safari/Firefox builds Vite targets. */}
       <div
-        className="w-full max-w-2xl bg-gray-900 rounded-2xl p-8 relative"
+        className="w-full max-w-2xl bg-gray-900 rounded-2xl px-8 py-8 font-mono text-2xl leading-relaxed overflow-hidden"
+        style={{ height: 'calc(2.4375rem * 3 + 4rem)' }}
         role="region"
         aria-label="Typing practice area"
       >
         <div
-          className="font-mono text-2xl leading-relaxed tracking-wide"
+          ref={innerRef}
+          key={streamKey}
+          className="tracking-wide"
+          style={{
+            transform: `translateY(-${scrollY}px)`,
+            transition: 'transform 120ms ease-out',
+            willChange: 'transform',
+          }}
           aria-live="polite"
           aria-label="Text to type"
         >
