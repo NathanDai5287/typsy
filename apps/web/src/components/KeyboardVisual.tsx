@@ -89,6 +89,15 @@ export default function KeyboardVisual({
               ? 'ring-1 ring-yellow-400'
               : '';
 
+            // Physical-position cues (independent of the active layout):
+            //   • Tactile bump under the home-row index keys (col 3 / col 6
+            //     on row 1 — F and J on QWERTY).
+            //   • Vertical gutter between the home index column and the
+            //     inner-stretch column on each hand (cols 3↔4 and 5↔6).
+            const isHomeIndex = pos.row === 1 && (pos.col === 3 || pos.col === 6);
+            const needsLeftGutter = pos.col === 4 || pos.col === 6;
+            const gutterPx = compact ? 6 : 10;
+
             return (
               <div
                 key={`${pos.row}-${pos.col}`}
@@ -103,9 +112,23 @@ export default function KeyboardVisual({
                   height: `${sizePx}px`,
                   fontSize: `${fontSize}px`,
                   opacity,
+                  marginLeft: needsLeftGutter ? `${gutterPx}px` : undefined,
                 }}
               >
                 {pos.char}
+                {isHomeIndex && (
+                  <span
+                    className={[
+                      'absolute left-1/2 -translate-x-1/2 bg-bg_h',
+                      isUnlocked ? '' : 'opacity-60',
+                    ].join(' ')}
+                    style={{
+                      bottom: '3px',
+                      height: '2px',
+                      width: `${Math.round(sizePx * 0.4)}px`,
+                    }}
+                  />
+                )}
                 {heatPct !== undefined && heatPct > 0 && (
                   <span
                     className="absolute -top-[3px] -right-[3px] w-2 h-2 border border-bg_h"
