@@ -73,6 +73,10 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # The decide job has no `actions/checkout` step, so `gh` can't detect
+      # the repo from a local git config. GH_REPO tells gh which repo every
+      # `gh pr ...` call targets without needing a working tree.
+      GH_REPO: ${{ github.repository }}
       PR: ${{ github.event.pull_request.number }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
