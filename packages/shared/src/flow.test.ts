@@ -133,4 +133,79 @@ describe('generateFlowLine', () => {
     expect(biasedHits).toBeGreaterThan(baselineHits);
     expect(biasedHits).toBeGreaterThan(0);
   });
+
+  it('produces varied word lengths (length-stratified sampling)', () => {
+    // Cold start, full alphabet — output should span multiple lengths
+    // rather than collapsing to whatever length wins the global score.
+    const allowed = new Set('abcdefghijklmnopqrstuvwxyz'.split(''));
+    const seedRng = (seed: number) => () => {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    };
+    const line = generateFlowLine({
+      allowed,
+      userIndex: indexNgramStats([]),
+      numWords: 30,
+      rng: seedRng(42),
+    });
+    const lengths = new Set(line.split(' ').map((w) => w.length));
+    // We bucket lengths in [4..12]; expect output to use at least 5 of those.
+    expect(lengths.size).toBeGreaterThanOrEqual(5);
+  });
+
+  it('does not concentrate cold-start emissions on the Colemak home row', () => {
+    // Regression: the previous implementation multiplied per-bigram
+    // weakness by English-corpus bigram frequency, which favored common
+    // bigrams like "th/he/in/er/an" — all of whose chars sit on the
+    // Colemak home row — so cold-start flow output was ~95%+ home-row
+    // chars on Colemak. With corpus frequency removed, cold-start is
+    // length-stratified and uses a much wider char distribution.
+    const allowed = new Set('abcdefghijklmnopqrstuvwxyz'.split(''));
+    const colemakHome = new Set(['a', 'r', 's', 't', 'd', 'h', 'n', 'e', 'i', 'o']);
+    const seedRng = (seed: number) => () => {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    };
+    const line = generateFlowLine({
+      allowed,
+      userIndex: indexNgramStats([]),
+      numWords: 50,
+      rng: seedRng(99),
+    });
+    let homeRowChars = 0;
+    let totalChars = 0;
+    for (const w of line.split(' ')) {
+      for (const c of w) {
+        totalChars++;
+        if (colemakHome.has(c)) homeRowChars++;
+      }
+    }
+    // English itself has ~70% of letters in the Colemak home row, so we
+    // can never expect << 70% — this guards against the old behavior of
+    // 90%+ where the output was nothing but "the/and/her/are/there/them".
+    expect(homeRowChars / totalChars).toBeLessThan(0.8);
+  });
+
+  it('cycles through bucket variety rather than spamming the top scorer', () => {
+    // Restricted allowed set so only a handful of words match. The
+    // per-call emit-count decay should prevent any single word from
+    // dominating the output.
+    const allowed = new Set(['a', 'r', 's', 't', 'd', 'h', 'n', 'e', 'i', 'o']);
+    const seedRng = (seed: number) => () => {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    };
+    const line = generateFlowLine({
+      allowed,
+      userIndex: indexNgramStats([]),
+      numWords: 40,
+      rng: seedRng(13),
+    });
+    const words = line.split(' ');
+    const counts = new Map<string, number>();
+    for (const w of words) counts.set(w, (counts.get(w) ?? 0) + 1);
+    const maxCount = Math.max(...counts.values());
+    // No single word should be more than ~25% of the output.
+    expect(maxCount).toBeLessThanOrEqual(Math.ceil(words.length * 0.25));
+  });
 });
