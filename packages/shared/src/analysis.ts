@@ -147,6 +147,55 @@ export function topWeakNgrams(
   return out.slice(0, topK);
 }
 
+// ─── Top slow ngrams ───────────────────────────────────────────────────────
+
+export interface SlowNgram {
+  ngram: string;
+  type: NgramStat['ngram_type'];
+  hits: number;
+  misses: number;
+  /** Mean keypress time across hits, in milliseconds. */
+  meanMs: number;
+  /** WPM derived from `meanMs` assuming 5 chars/word. */
+  wpm: number;
+}
+
+/**
+ * Top-K slowest ngrams of a given type, ranked by mean keypress time
+ * (highest first). For a bigram "AB", `meanMs` is the time between the
+ * A and B keystrokes; for a word, it's the mean inter-key time.
+ *
+ * Mean is computed as `total_time_ms / hits` to match `perFingerStats`,
+ * so only successful trials contribute to the denominator. Rows with no
+ * hits or fewer than `minAttempts` total attempts are skipped to avoid
+ * noise from a handful of mistypes.
+ */
+export function topSlowNgrams(
+  ngramRows: readonly NgramStat[],
+  type: NgramStat['ngram_type'],
+  topK = 10,
+  minAttempts = 5,
+): SlowNgram[] {
+  const out: SlowNgram[] = [];
+  for (const row of ngramRows) {
+    if (row.ngram_type !== type) continue;
+    if (row.hits + row.misses < minAttempts) continue;
+    if (row.hits <= 0) continue;
+    const meanMs = row.total_time_ms / row.hits;
+    if (meanMs <= 0) continue;
+    out.push({
+      ngram: row.ngram,
+      type: row.ngram_type,
+      hits: row.hits,
+      misses: row.misses,
+      meanMs,
+      wpm: 60_000 / (meanMs * CHARS_PER_WORD),
+    });
+  }
+  out.sort((a, b) => b.meanMs - a.meanMs);
+  return out.slice(0, topK);
+}
+
 // ─── Sessions: streak / totals ─────────────────────────────────────────────
 
 /** Total characters typed across all sessions for the layout. */
