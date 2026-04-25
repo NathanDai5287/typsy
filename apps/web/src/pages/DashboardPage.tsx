@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { Navigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   fetchUser,
@@ -144,11 +145,7 @@ export default function DashboardPage(): JSX.Element {
     );
   }
   if (!activeProgress || !activeLayout) {
-    return (
-      <div className="flex h-[60vh] items-center justify-center text-fg3">
-        Complete onboarding to see your dashboard.
-      </div>
-    );
+    return <Navigate to="/onboarding" replace />;
   }
 
   const noData = (sessions?.length ?? 0) === 0;

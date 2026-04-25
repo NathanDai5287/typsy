@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Navigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchLayouts, fetchUser, postUserFingering } from '../lib/api.ts';
 import type { FingerLabel, KeyPosition, Layout, UserResponse } from '@typsy/shared';
@@ -69,15 +70,7 @@ export default function FingeringPage(): JSX.Element {
   }
 
   if (onboardedProgress.length === 0) {
-    return (
-      <div className="max-w-3xl mx-auto px-4 py-8 text-fg3">
-        Set up a layout first on the{' '}
-        <a href="/layouts" className="text-yellow-400 underline">
-          layouts
-        </a>{' '}
-        page.
-      </div>
-    );
+    return <Navigate to="/onboarding" replace />;
   }
 
   function handleSave(posFingerMap: Record<string, FingerLabel>) {
