@@ -208,8 +208,7 @@ There is no separate `lint` or `typecheck` command — `pnpm build` is the typec
 | Day-to-day dev commands & seed/reset docs | `DEVELOPMENT.md` |
 | User-facing intro | `README.md` |
 | Devin agent config (gitignored local override allowed) | `.devin/config.local.json` |
-| CI workflow (build + test) | `.github/workflows/ci.yml` |
-| AI review workflow | `.github/workflows/ai-review.yml` |
+| CI workflow (build + test + auto-merge) | `.github/workflows/ci.yml` |
 | Pull-merged-work helper | `scripts/devin-pull.sh` |
 
 ### Things that DO NOT exist (don't go looking)
@@ -234,7 +233,7 @@ There is no separate `lint` or `typecheck` command — `pnpm build` is the typec
 - **All pure-function tests must work without a real `Math.random`.** Functions like `generateDrillSequence`, `generateFlowLine`, `runAnnealing` accept an injectable `rng` parameter — use it in tests for determinism.
 - **Tailwind theme is custom (Catppuccin Mocha).** Don't introduce ad-hoc hex colors; use the named tokens defined in `apps/web/tailwind.config.js`.
 - **`apps/server/dist/` is a build artifact** but is not gitignored at the time of this writing — leave it alone unless you're cleaning up.
-- **PRs flow through CI + AI review + merge queue, fully automatic.** Two workflows fire on every PR push: `.github/workflows/ci.yml` (build + test) and `.github/workflows/ai-review.yml` (an AI reads the diff via GitHub Models and posts an `APPROVE` or `REQUEST_CHANGES` review). On AI `APPROVE`, the AI workflow calls `gh pr merge --auto`, which adds the PR to GitHub's merge queue. The queue re-runs CI on `main + previously-queued PRs + this PR` to catch semantic conflicts before merging. **Do not click Approve yourself or run `gh pr merge`** — both are automatic. The human-in-the-loop gate is the per-commit "Want me to commit and push this?" ask in the parallel protocol.
+- **PRs auto-merge once CI is green.** `.github/workflows/ci.yml` runs build + test on every PR push and has an `enqueue` job that calls `gh pr merge --auto --merge --delete-branch`. GitHub merges the PR (or runs it through the merge queue if configured) as soon as required checks pass. There is no AI review step — the human-in-the-loop gate is the per-commit "Want me to commit and push this?" ask in the parallel protocol. **Do not run `gh pr merge` yourself** — it's automatic.
 - **Pull merged work into your main checkout** with `scripts/devin-pull.sh` — it does `git pull origin main --ff-only`, refuses if the current branch isn't `main`, and refuses if the working tree is dirty.
 - **Always work in a git worktree under `../worktrees/<slug>/`, never the main checkout.** `git switch` is global to a working tree, so two Devin instances in the same directory will flip each other's branch underneath them and commits will land on the wrong slug. `scripts/devin-spawn.sh <slug>` creates the worktree; `scripts/devin-locks.sh claim` will refuse a second claim from the same `pwd` as a backstop.
 - **`.pnpm-store/` at the repo root** is from a previous local install; it's gitignored and safe to delete if you want to free space.
