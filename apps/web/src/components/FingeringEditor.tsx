@@ -112,9 +112,18 @@ export default function FingeringEditor({
     return positions.find((p) => posKey(p) === selectedPos)?.char ?? null;
   }, [selectedPos, positions]);
 
+  // Read `selectedPos` via the ref instead of the surrounding closure.
+  // The keymap-binding handlers below are memoized on `[positions]`, so
+  // the `assignFinger` they capture is whichever instance existed the
+  // first time `positions` was non-empty — i.e. before the user clicked
+  // any key. Without the ref, every digit-key handler always saw
+  // `selectedPos === null` and returned early, so the number shortcuts
+  // silently did nothing while the picker buttons (which call the
+  // *current* `assignFinger`) still worked.
   function assignFinger(finger: FingerLabel) {
-    if (!selectedPos) return;
-    setPosFingerMap((prev) => ({ ...prev, [selectedPos]: finger }));
+    const pos = stateRef.current.selectedPos;
+    if (!pos) return;
+    setPosFingerMap((prev) => ({ ...prev, [pos]: finger }));
     setPickerOpen(false);
   }
 
