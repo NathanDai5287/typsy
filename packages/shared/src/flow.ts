@@ -10,9 +10,11 @@ export interface FlowOptions {
   numWords?: number;
   /**
    * Softmax temperature applied to MAX-normalized scores (lower = greedier).
-   * 1.0 ≈ near-uniform, 0.1 ≈ heavy concentration on the top scorers, 0.3 is
+   * 1.0 ≈ near-uniform, 0.1 ≈ heavy concentration on the top scorers. 0.4 is
    * a moderate default that lets the user's weakness signal actually steer
-   * sampling without collapsing to the single highest-scoring word.
+   * sampling without collapsing to the single highest-scoring word, while
+   * still putting a bit of weight on the tail of the top-K pool so rarer
+   * (lower-weakness) words also show up.
    */
   temperature?: number;
   /** Top-K candidate pool to sample from (default 60). */
@@ -105,7 +107,7 @@ export function generateFlowLine({
   allowed,
   userIndex,
   numWords = 20,
-  temperature = 0.3,
+  temperature = 0.4,
   topK = 60,
   recent,
   recentDecay = 0.2,
