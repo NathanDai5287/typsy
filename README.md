@@ -50,9 +50,10 @@ pnpm --filter web test
 - **Phase 1 — MVP.** Onboarding, typing loop, session recording, batched ngram stats.
 - **Phase 2 — Adaptive learning.** Bayesian-smoothed error rates with ngram backoff
   (`packages/shared/src/bayesian.ts`, `ngramStats.ts`), initial home-row subset selection
-  (`initialSubset.ts`), key unlock / review-resurface (`keyUnlock.ts`), Markov drill
-  generation (`markov.ts`, `drill.ts`), weakness-weighted flow generation (`flow.ts`),
-  and a drill/flow mode toggle on the practice page.
+  (`initialSubset.ts`), key unlock / review-resurface (`keyUnlock.ts`), snippet-based
+  drill generation that targets the user's weakest bigrams and most-missed words
+  (`drill.ts`, with corpus bigram statistics in `markov.ts`), weakness-weighted flow
+  generation (`flow.ts`), and a drill/flow mode toggle on the practice page.
 - **Phase 3 — Visualization.** On-screen keyboard with finger colors and a
   muscle-memory opacity fade (`apps/web/src/components/KeyboardVisual.tsx`).
   Dashboard with WPM-over-time, WPM-over-volume, accuracy trend, per-finger WPM,
