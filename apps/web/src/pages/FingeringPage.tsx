@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchLayouts, fetchUser, postProgressUpdate } from '../lib/api.ts';
-import type { FingerLabel, KeyPosition, Layout } from '@typsy/shared';
-import FingeringEditor, { buildDefaultFingeringMap } from '../components/FingeringEditor.tsx';
+import { fetchLayouts, fetchUser, postUserFingering } from '../lib/api.ts';
+import type { FingerLabel, KeyPosition, Layout, UserResponse } from '@typsy/shared';
+import FingeringEditor, { buildDefaultPosFingerMap } from '../components/FingeringEditor.tsx';
 
 /**
- * /fingering — edit which finger maps to which key for any onboarded layout.
- * The active layout is selected by default; users with multiple layouts can
- * pick any of them from the picker at the top.
+ * /fingering — edit the user's layout-independent finger assignments.
+ *
+ * The fingering map is keyed by physical position (`"row,col"`), so it
+ * applies to every layout the user practices. The displayed keyboard is
+ * just a visual reference — switching it doesn't change which finger is
+ * assigned to a given physical key.
  */
 export default function FingeringPage() {
   const queryClient = useQueryClient();
@@ -22,36 +25,43 @@ export default function FingeringPage() {
 
   const onboardedProgress = userData?.layout_progress ?? [];
 
-  // Default to the active layout (server returns it as layout_progress[0]).
-  const [selectedLayoutId, setSelectedLayoutId] = useState<number | null>(null);
+  // The keyboard is shown purely for visual reference. Default to the
+  // active layout (server returns it as layout_progress[0]); user can
+  // pick any onboarded layout to confirm the fingering looks right with
+  // its character placement.
+  const [displayLayoutId, setDisplayLayoutId] = useState<number | null>(null);
   useEffect(() => {
-    if (selectedLayoutId === null && onboardedProgress.length > 0) {
-      setSelectedLayoutId(onboardedProgress[0].layout_id);
+    if (displayLayoutId === null && onboardedProgress.length > 0) {
+      setDisplayLayoutId(onboardedProgress[0].layout_id);
     }
-  }, [onboardedProgress, selectedLayoutId]);
+  }, [onboardedProgress, displayLayoutId]);
 
-  const selectedProgress = onboardedProgress.find((p) => p.layout_id === selectedLayoutId);
-  const selectedLayout = selectedLayoutId !== null ? layoutsById.get(selectedLayoutId) : undefined;
+  const displayLayout = displayLayoutId !== null ? layoutsById.get(displayLayoutId) : undefined;
 
   const positions = useMemo<KeyPosition[]>(
-    () => (selectedLayout ? JSON.parse(selectedLayout.key_positions_json) : []),
-    [selectedLayout],
+    () => (displayLayout ? JSON.parse(displayLayout.key_positions_json) : []),
+    [displayLayout],
   );
 
   const initialMap = useMemo<Record<string, FingerLabel>>(() => {
-    if (!selectedProgress) return {};
+    if (!userData) return {};
     try {
-      return JSON.parse(selectedProgress.fingering_map_json) as Record<string, FingerLabel>;
+      return JSON.parse(userData.user.fingering_map_json) as Record<string, FingerLabel>;
     } catch {
       return {};
     }
-  }, [selectedProgress?.fingering_map_json]);
+  }, [userData?.user.fingering_map_json]);
 
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const saveMutation = useMutation({
-    mutationFn: postProgressUpdate,
-    onSuccess: () => {
+    mutationFn: postUserFingering,
+    onSuccess: (user) => {
+      // Patch the cached user response so other pages see the new map
+      // immediately, then invalidate to refetch the canonical version.
+      queryClient.setQueryData<UserResponse | undefined>(['user'], (prev) =>
+        prev ? { ...prev, user } : prev,
+      );
       void queryClient.invalidateQueries({ queryKey: ['user'] });
       setStatusMessage('Fingering saved.');
     },
@@ -59,11 +69,6 @@ export default function FingeringPage() {
       setStatusMessage(`Could not save: ${err instanceof Error ? err.message : 'unknown error'}`);
     },
   });
-
-  // Clear the status message when the user switches layouts.
-  useEffect(() => {
-    setStatusMessage(null);
-  }, [selectedLayoutId]);
 
   if (!userData || !layouts) {
     return (
@@ -81,22 +86,14 @@ export default function FingeringPage() {
     );
   }
 
-  function handleSave(fingerMap: Record<string, FingerLabel>) {
-    if (selectedLayoutId === null) return;
-    saveMutation.mutate({
-      layout_id: selectedLayoutId,
-      fingering_map_json: JSON.stringify(fingerMap),
-    });
+  function handleSave(posFingerMap: Record<string, FingerLabel>) {
+    saveMutation.mutate({ fingering_map_json: JSON.stringify(posFingerMap) });
   }
 
   function handleResetToDefault() {
-    if (selectedLayoutId === null || !selectedLayout) return;
-    const positions = JSON.parse(selectedLayout.key_positions_json) as KeyPosition[];
-    const defaults = buildDefaultFingeringMap(positions);
-    saveMutation.mutate({
-      layout_id: selectedLayoutId,
-      fingering_map_json: JSON.stringify(defaults),
-    });
+    if (positions.length === 0) return;
+    const defaults = buildDefaultPosFingerMap(positions);
+    saveMutation.mutate({ fingering_map_json: JSON.stringify(defaults) });
   }
 
   return (
@@ -104,43 +101,48 @@ export default function FingeringPage() {
       <header>
         <h1 className="text-3xl font-bold text-white">Fingering</h1>
         <p className="text-gray-400 mt-1">
-          Override the default column-based finger assignments for any of your layouts.
-          Saved fingerings are used everywhere — keyboard visualization, per-finger stats,
-          and SFB detection.
+          Override the default column-based finger assignments for your physical keyboard.
+          Saved fingerings are tied to physical key positions, so they apply to every layout
+          you practice — used for keyboard visualization, per-finger stats, and SFB detection.
         </p>
       </header>
 
-      {/* Layout picker */}
+      {/* Layout picker — pure visual aid, doesn't change the fingering data */}
       {onboardedProgress.length > 1 && (
-        <div className="flex flex-wrap gap-2">
-          {onboardedProgress.map((p) => {
-            const layout = layoutsById.get(p.layout_id);
-            if (!layout) return null;
-            const isSelected = p.layout_id === selectedLayoutId;
-            return (
-              <button
-                key={p.layout_id}
-                type="button"
-                onClick={() => setSelectedLayoutId(p.layout_id)}
-                aria-pressed={isSelected}
-                className={[
-                  'px-4 py-1.5 text-sm rounded-lg border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400',
-                  isSelected
-                    ? 'border-blue-500 bg-blue-600 text-crust font-medium'
-                    : 'border-gray-700 text-gray-300 hover:border-gray-500',
-                ].join(' ')}
-              >
-                {layout.name}
-              </button>
-            );
-          })}
+        <div className="space-y-2">
+          <p className="text-xs uppercase tracking-wider text-gray-500">
+            Show with characters from
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {onboardedProgress.map((p) => {
+              const layout = layoutsById.get(p.layout_id);
+              if (!layout) return null;
+              const isSelected = p.layout_id === displayLayoutId;
+              return (
+                <button
+                  key={p.layout_id}
+                  type="button"
+                  onClick={() => setDisplayLayoutId(p.layout_id)}
+                  aria-pressed={isSelected}
+                  className={[
+                    'px-4 py-1.5 text-sm rounded-lg border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400',
+                    isSelected
+                      ? 'border-blue-500 bg-blue-600 text-crust font-medium'
+                      : 'border-gray-700 text-gray-300 hover:border-gray-500',
+                  ].join(' ')}
+                >
+                  {layout.name}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
-      {selectedLayout && (
+      {displayLayout && (
         <section className="space-y-4">
           <div className="flex items-baseline justify-between">
-            <h2 className="text-lg font-semibold text-white">{selectedLayout.name}</h2>
+            <h2 className="text-lg font-semibold text-white">Your fingering</h2>
             <button
               type="button"
               onClick={handleResetToDefault}
@@ -152,8 +154,9 @@ export default function FingeringPage() {
           </div>
 
           <FingeringEditor
-            // Re-mount the editor when the layout changes so its internal state resets cleanly.
-            key={selectedLayoutId}
+            // Re-mount when the user navigates to a different display
+            // layout so the character labels redraw cleanly.
+            key={displayLayoutId}
             positions={positions}
             initialMap={initialMap}
             onSave={handleSave}

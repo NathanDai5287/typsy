@@ -1,22 +1,31 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { KeyPosition, FingerLabel } from '@typsy/shared';
-import { COL_TO_FINGER } from '@typsy/shared';
+import { COL_TO_FINGER, posKey } from '@typsy/shared';
 import { FINGER_BG, FINGER_LABELS } from '../lib/finger-colors.ts';
 
-/** Column-based default — what the layout would assume without an override. */
-export function buildDefaultFingeringMap(
+/**
+ * Column-based default keyed by physical position. This is what the layout
+ * would assume without any user override — and the starting point for the
+ * user's one-and-only fingering map.
+ */
+export function buildDefaultPosFingerMap(
   positions: readonly KeyPosition[],
 ): Record<string, FingerLabel> {
   const map: Record<string, FingerLabel> = {};
   for (const pos of positions) {
-    map[pos.char] = COL_TO_FINGER[pos.col] ?? 'right_pinky';
+    map[posKey(pos)] = COL_TO_FINGER[pos.col] ?? 'right_pinky';
   }
   return map;
 }
 
 export interface FingeringEditorProps {
+  /**
+   * Layout used purely for visual reference (which chars sit on which
+   * physical keys). The fingering itself is layout-independent — it's
+   * keyed by `posKey(pos)`, not by character.
+   */
   positions: readonly KeyPosition[];
-  /** Map to pre-populate; falls back to column-based defaults for any missing chars. */
+  /** Pre-populates the editor; missing positions fall back to column defaults. */
   initialMap?: Record<string, FingerLabel>;
   /** Hides the save button — useful when the parent owns the save action. Default false. */
   hideSaveButton?: boolean;
@@ -24,17 +33,17 @@ export interface FingeringEditorProps {
   saveLabel?: string;
   /** Loading label shown on the save button. Default "Saving…". */
   savingLabel?: string;
-  /** Called when the user clicks "Save". */
-  onSave?: (fingerMap: Record<string, FingerLabel>) => void;
-  /** Called whenever the editor's internal map changes — useful for parents that want a live preview. */
-  onChange?: (fingerMap: Record<string, FingerLabel>) => void;
+  /** Called when the user clicks "Save". Receives the position-keyed map. */
+  onSave?: (posFingerMap: Record<string, FingerLabel>) => void;
+  /** Called whenever the editor's internal map changes — for live previews. */
+  onChange?: (posFingerMap: Record<string, FingerLabel>) => void;
   isSaving?: boolean;
 }
 
 /**
  * 30-key finger-assignment editor. Click a key, then pick a finger from the
- * popup. Used in onboarding (with column-based defaults) and on `/fingering`
- * (pre-populated from the user's saved map).
+ * popup. The finger is bound to the **physical position** (row, col), not
+ * to the character — so the same assignment carries over to every layout.
  */
 export default function FingeringEditor({
   positions,
@@ -46,24 +55,24 @@ export default function FingeringEditor({
   onChange,
   isSaving = false,
 }: FingeringEditorProps) {
-  const defaults = useMemo(() => buildDefaultFingeringMap(positions), [positions]);
+  const defaults = useMemo(() => buildDefaultPosFingerMap(positions), [positions]);
 
-  const [fingerMap, setFingerMap] = useState<Record<string, FingerLabel>>(() => ({
+  const [posFingerMap, setPosFingerMap] = useState<Record<string, FingerLabel>>(() => ({
     ...defaults,
     ...(initialMap ?? {}),
   }));
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [selectedPos, setSelectedPos] = useState<string | null>(null);
 
-  // If the parent swaps the layout (and therefore positions/initialMap), reset
-  // local state so we don't carry over assignments from a different layout.
+  // Reset when defaults or the externally-provided map changes (e.g. parent
+  // swaps the displayed layout, or the saved fingering refetches).
   useEffect(() => {
-    setFingerMap({ ...defaults, ...(initialMap ?? {}) });
-    setSelectedKey(null);
+    setPosFingerMap({ ...defaults, ...(initialMap ?? {}) });
+    setSelectedPos(null);
   }, [defaults, initialMap]);
 
   useEffect(() => {
-    onChange?.(fingerMap);
-  }, [fingerMap, onChange]);
+    onChange?.(posFingerMap);
+  }, [posFingerMap, onChange]);
 
   const rows = useMemo(
     () =>
@@ -73,21 +82,27 @@ export default function FingeringEditor({
     [positions],
   );
 
+  const selectedChar = useMemo(() => {
+    if (!selectedPos) return null;
+    return positions.find((p) => posKey(p) === selectedPos)?.char ?? null;
+  }, [selectedPos, positions]);
+
   function assignFinger(finger: FingerLabel) {
-    if (!selectedKey) return;
-    setFingerMap((prev) => ({ ...prev, [selectedKey]: finger }));
-    setSelectedKey(null);
+    if (!selectedPos) return;
+    setPosFingerMap((prev) => ({ ...prev, [selectedPos]: finger }));
+    setSelectedPos(null);
   }
 
   function resetToDefaults() {
-    setFingerMap(defaults);
-    setSelectedKey(null);
+    setPosFingerMap(defaults);
+    setSelectedPos(null);
   }
 
   return (
     <div className="space-y-6">
       <p className="text-gray-400 text-sm">
         Click a key to reassign its finger. Defaults use standard touch-typing columns.
+        Fingerings are tied to physical key positions, so they apply to every layout.
       </p>
 
       {/* Key grid */}
@@ -99,14 +114,15 @@ export default function FingeringEditor({
             style={{ paddingLeft: ri === 1 ? '0.6rem' : ri === 2 ? '1.2rem' : 0 }}
           >
             {row.map((pos) => {
-              const finger = fingerMap[pos.char] ?? defaults[pos.char];
+              const key = posKey(pos);
+              const finger = posFingerMap[key] ?? defaults[key];
               const color = FINGER_BG[finger] ?? 'bg-gray-700';
-              const isSelected = selectedKey === pos.char;
+              const isSelected = selectedPos === key;
               return (
                 <button
-                  key={pos.char}
+                  key={key}
                   type="button"
-                  onClick={() => setSelectedKey(isSelected ? null : pos.char)}
+                  onClick={() => setSelectedPos(isSelected ? null : key)}
                   className={[
                     'w-10 h-10 rounded font-mono text-sm font-medium text-crust transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400',
                     color,
@@ -125,10 +141,16 @@ export default function FingeringEditor({
       </div>
 
       {/* Finger selector */}
-      {selectedKey && (
+      {selectedPos && (
         <div className="p-4 bg-gray-800 rounded-lg space-y-2">
           <p className="text-sm text-gray-300">
-            Assign <span className="font-mono text-white">"{selectedKey}"</span> to:
+            Assign the key
+            {selectedChar !== null && (
+              <>
+                {' '}(showing <span className="font-mono text-white">"{selectedChar}"</span>)
+              </>
+            )}
+            {' '}to:
           </p>
           <div className="flex flex-wrap gap-2">
             {FINGER_LABELS.map((f) => (
@@ -166,7 +188,7 @@ export default function FingeringEditor({
           <button
             type="button"
             disabled={isSaving}
-            onClick={() => onSave(fingerMap)}
+            onClick={() => onSave(posFingerMap)}
             className="px-6 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg text-crust font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
           >
             {isSaving ? savingLabel : saveLabel}

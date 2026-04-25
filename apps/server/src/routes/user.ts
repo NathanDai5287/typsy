@@ -8,9 +8,11 @@ import {
   type UserLayoutProgress,
   type OnboardingPayload,
   type ProgressUpdatePayload,
+  type UserFingeringPayload,
   type UserResponse,
   type Layout,
   type KeyPosition,
+  type FingerLabel,
   type SetActiveLayoutPayload,
   type UserSettings,
 } from '@typsy/shared';
@@ -137,7 +139,7 @@ router.post('/active-layout', (req, res) => {
 router.post('/onboarding', (req, res) => {
   const db = getDb();
   const userId = getCurrentUserId();
-  const { layout_id, fingering_map_json } = req.body as OnboardingPayload;
+  const { layout_id } = req.body as OnboardingPayload;
 
   if (!layout_id || typeof layout_id !== 'number') {
     res.status(400).json({ error: 'layout_id is required' });
@@ -158,12 +160,11 @@ router.post('/onboarding', (req, res) => {
 
   db.prepare(
     `INSERT INTO user_layout_progress
-       (user_id, layout_id, fingering_map_json, unlocked_keys_json, current_mode)
-     VALUES (?, ?, ?, ?, 'flow')
+       (user_id, layout_id, unlocked_keys_json, current_mode)
+     VALUES (?, ?, ?, 'flow')
      ON CONFLICT(user_id, layout_id) DO UPDATE SET
-       fingering_map_json = excluded.fingering_map_json,
        unlocked_keys_json = COALESCE(user_layout_progress.unlocked_keys_json, excluded.unlocked_keys_json)`,
-  ).run(userId, layout_id, fingering_map_json ?? '{}', JSON.stringify(initialUnlocked));
+  ).run(userId, layout_id, JSON.stringify(initialUnlocked));
 
   // First-time onboarding: make this layout the active one if none was set.
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as User;
@@ -178,6 +179,44 @@ router.post('/onboarding', (req, res) => {
   const userAfter = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as User;
 
   res.json({ user: userAfter, layout_progress });
+});
+
+/**
+ * POST /api/user/fingering — replace the user's layout-independent fingering
+ * map. The body is a JSON string keyed by physical position (`"row,col"`),
+ * not by character; that's what makes it apply across every layout.
+ */
+router.post('/fingering', (req, res) => {
+  const db = getDb();
+  const userId = getCurrentUserId();
+  const { fingering_map_json } = req.body as UserFingeringPayload;
+
+  if (typeof fingering_map_json !== 'string') {
+    res.status(400).json({ error: 'fingering_map_json is required' });
+    return;
+  }
+
+  // Validate it parses and looks like Record<string, FingerLabel>. Reject
+  // garbage early so corrupt data can't reach the consumers.
+  let parsed: Record<string, FingerLabel>;
+  try {
+    parsed = JSON.parse(fingering_map_json) as Record<string, FingerLabel>;
+  } catch {
+    res.status(400).json({ error: 'fingering_map_json is not valid JSON' });
+    return;
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    res.status(400).json({ error: 'fingering_map_json must be an object' });
+    return;
+  }
+
+  db.prepare('UPDATE users SET fingering_map_json = ? WHERE id = ?').run(
+    JSON.stringify(parsed),
+    userId,
+  );
+
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as User;
+  res.json(user);
 });
 
 /**
@@ -214,10 +253,6 @@ router.post('/progress', (req, res) => {
   if (payload.is_main_layout !== undefined) {
     updates.push('is_main_layout = ?');
     params.push(payload.is_main_layout ? 1 : 0);
-  }
-  if (payload.fingering_map_json !== undefined) {
-    updates.push('fingering_map_json = ?');
-    params.push(payload.fingering_map_json);
   }
 
   if (updates.length === 0) {

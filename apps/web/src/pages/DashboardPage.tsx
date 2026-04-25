@@ -91,18 +91,18 @@ export default function DashboardPage() {
     [activeLayout],
   );
 
-  const fingerOverrides = useMemo<Record<string, FingerLabel> | undefined>(() => {
-    if (!activeProgress) return;
+  const posFingerMap = useMemo<Record<string, FingerLabel> | undefined>(() => {
+    if (!userData) return;
     try {
-      return JSON.parse(activeProgress.fingering_map_json) as Record<string, FingerLabel>;
+      return JSON.parse(userData.user.fingering_map_json) as Record<string, FingerLabel>;
     } catch {
       return undefined;
     }
-  }, [activeProgress?.fingering_map_json]);
+  }, [userData?.user.fingering_map_json]);
 
   const fingerMap = useMemo(
-    () => buildFingerMap(positions, fingerOverrides),
-    [positions, fingerOverrides],
+    () => buildFingerMap(positions, posFingerMap),
+    [positions, posFingerMap],
   );
 
   const series = useMemo(() => sessionsAsSeries(sessions ?? []), [sessions]);
@@ -316,7 +316,7 @@ export default function DashboardPage() {
         </p>
         <KeyboardVisual
           positions={positions}
-          fingerOverrides={fingerOverrides}
+          posFingerMap={posFingerMap}
           heat={heatmap}
         />
       </section>
