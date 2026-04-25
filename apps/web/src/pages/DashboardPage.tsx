@@ -33,41 +33,50 @@ import {
   YAxis,
 } from 'recharts';
 
-// Catppuccin Mocha hex tokens for the Recharts SVGs (which can't read
-// Tailwind classes). Keep these in sync with `tailwind.config.js`.
+// ─── Gruvbox tokens for the Recharts SVGs ──────────────────────────────
 const CHART = {
-  grid:       '#45475a', // surface1
-  axis:       '#7f849c', // overlay1
-  tooltipBg:  '#181825', // mantle
-  tooltipBd:  '#45475a', // surface1
-  wpmLine:    '#89b4fa', // blue
-  volumeLine: '#a6e3a1', // green
-  accLine:    '#f9e2af', // yellow
+  grid:       '#3c3836', // bg4
+  axis:       '#928374', // fg3
+  tooltipBg:  '#161819', // bg0
+  tooltipBd:  '#3c3836', // bg4
+  wpmLine:    '#7daea3', // blue
+  volumeLine: '#a9b665', // green
+  accLine:    '#d8a657', // yellow
 };
 const TOOLTIP_STYLE = {
   background: CHART.tooltipBg,
   border: `1px solid ${CHART.tooltipBd}`,
+  fontFamily: 'JetBrains Mono, monospace',
+  fontSize: '12px',
 };
 
-// ─── Subcomponents ───────────────────────────────────────────────────────
+// ─── Subcomponents ────────────────────────────────────────────────────
 
-function StatCard({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
+function StatCard({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string | number;
+  hint?: string;
+}): JSX.Element {
   return (
-    <div className="bg-gray-900 rounded-xl p-4 flex flex-col">
-      <span className="text-xs uppercase tracking-wider text-gray-500">{label}</span>
-      <span className="text-3xl font-mono font-bold text-white mt-1 tabular-nums">{value}</span>
-      {hint && <span className="text-xs text-gray-500 mt-1">{hint}</span>}
+    <div className="panel p-3 flex flex-col">
+      <span className="text-[10px] uppercase tracking-widest text-fg4">{label}</span>
+      <span className="text-2xl font-mono font-bold text-fg_h mt-1 tabular-nums">{value}</span>
+      {hint && <span className="text-[11px] text-fg4 mt-1">{hint}</span>}
     </div>
   );
 }
 
-function PanelHeading({ children }: { children: React.ReactNode }) {
-  return <h2 className="text-sm uppercase tracking-wider text-gray-400 mb-3">{children}</h2>;
+function PanelHeading({ children }: { children: React.ReactNode }): JSX.Element {
+  return <h2 className="panel-heading">{children}</h2>;
 }
 
-// ─── Main page ───────────────────────────────────────────────────────────
+// ─── Main page ────────────────────────────────────────────────────────
 
-export default function DashboardPage() {
+export default function DashboardPage(): JSX.Element {
   const { data: userData } = useQuery({ queryKey: ['user'], queryFn: fetchUser });
   const { data: layouts } = useQuery({ queryKey: ['layouts'], queryFn: fetchLayouts });
   const activeProgress = userData?.layout_progress[0];
@@ -129,13 +138,14 @@ export default function DashboardPage() {
   const totalChars = useMemo(() => totalCharsTyped(sessions ?? []), [sessions]);
   const lastSession = sessions?.[0];
 
-  // ─── Loading / empty states ──────────────────────────────────────────────
   if (!userData || !layouts) {
-    return <div className="flex h-[60vh] items-center justify-center text-gray-400">Loading…</div>;
+    return (
+      <div className="flex h-[60vh] items-center justify-center text-fg3">loading…</div>
+    );
   }
   if (!activeProgress || !activeLayout) {
     return (
-      <div className="flex h-[60vh] items-center justify-center text-gray-400">
+      <div className="flex h-[60vh] items-center justify-center text-fg3">
         Complete onboarding to see your dashboard.
       </div>
     );
@@ -144,63 +154,61 @@ export default function DashboardPage() {
   const noData = (sessions?.length ?? 0) === 0;
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-8 space-y-8">
+    <div className="max-w-6xl mx-auto px-4 py-6 space-y-5">
       <header>
-        <h1 className="text-3xl font-bold text-white">Dashboard</h1>
-        <p className="text-gray-400 mt-1">
+        <h1 className="text-xl text-fg_h">dashboard</h1>
+        <p className="text-fg3 text-sm mt-0.5">
           {activeLayout.name} · {sessions?.length ?? 0} session
           {sessions?.length === 1 ? '' : 's'}
         </p>
       </header>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard
-          label="Total chars"
+          label="total chars"
           value={totalChars.toLocaleString()}
-          hint={lastSession ? `Last: ${formatRelative(lastSession.ended_at)}` : undefined}
+          hint={lastSession ? `last: ${formatRelative(lastSession.ended_at)}` : undefined}
         />
         <StatCard
-          label="Streak"
+          label="streak"
           value={`${streak} ${streak === 1 ? 'day' : 'days'}`}
-          hint={streak > 0 ? 'Keep it up!' : 'Practice today to start a streak'}
+          hint={streak > 0 ? 'keep it up' : 'practice today to start'}
         />
         <StatCard
-          label="Latest WPM"
+          label="latest wpm"
           value={lastSession ? Math.round(lastSession.wpm) : '—'}
-          hint={
-            lastSession ? `${Math.round(lastSession.accuracy * 100)}% accuracy` : undefined
-          }
+          hint={lastSession ? `${Math.round(lastSession.accuracy * 100)}% acc` : undefined}
         />
         <StatCard
-          label="SFB rate"
+          label="sfb rate"
           value={`${(sfb * 100).toFixed(2)}%`}
-          hint="Same-finger bigrams across all typed text"
+          hint="same-finger bigrams"
         />
       </div>
 
       {noData && (
-        <div className="rounded-xl bg-gray-900 p-8 text-center text-gray-400">
-          No sessions yet. Head to the practice page to get started.
+        <div className="panel p-6 text-center text-fg3 text-sm">
+          No sessions yet. Head to Practice to get started.
         </div>
       )}
 
       {!noData && (
         <>
           {/* WPM trend charts */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <section className="bg-gray-900 rounded-xl p-5">
-              <PanelHeading>WPM over time</PanelHeading>
-              <ResponsiveContainer width="100%" height={220}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <section className="panel p-4">
+              <PanelHeading>wpm over time</PanelHeading>
+              <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={series} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
-                  <CartesianGrid stroke={CHART.grid} strokeDasharray="4 4" />
+                  <CartesianGrid stroke={CHART.grid} strokeDasharray="2 4" />
                   <XAxis
                     dataKey="endedAt"
                     tickFormatter={(t) => formatShortDate(t)}
                     stroke={CHART.axis}
-                    fontSize={11}
+                    fontSize={10}
                   />
-                  <YAxis stroke={CHART.axis} fontSize={11} domain={[0, 'auto']} />
+                  <YAxis stroke={CHART.axis} fontSize={10} domain={[0, 'auto']} />
                   <Tooltip
                     contentStyle={TOOLTIP_STYLE}
                     labelFormatter={(t) => formatLongDate(String(t))}
@@ -208,52 +216,52 @@ export default function DashboardPage() {
                       k === 'wpm' ? [v.toFixed(1), 'WPM'] : [v, k]
                     }
                   />
-                  <Line type="monotone" dataKey="wpm" stroke={CHART.wpmLine} strokeWidth={2} dot={false} />
+                  <Line type="linear" dataKey="wpm" stroke={CHART.wpmLine} strokeWidth={1.5} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             </section>
 
-            <section className="bg-gray-900 rounded-xl p-5">
-              <PanelHeading>WPM over volume</PanelHeading>
-              <ResponsiveContainer width="100%" height={220}>
+            <section className="panel p-4">
+              <PanelHeading>wpm over volume</PanelHeading>
+              <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={series} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
-                  <CartesianGrid stroke={CHART.grid} strokeDasharray="4 4" />
+                  <CartesianGrid stroke={CHART.grid} strokeDasharray="2 4" />
                   <XAxis
                     dataKey="cumulativeChars"
                     type="number"
                     tickFormatter={(t) => `${(t / 1000).toFixed(0)}k`}
                     stroke={CHART.axis}
-                    fontSize={11}
+                    fontSize={10}
                   />
-                  <YAxis stroke={CHART.axis} fontSize={11} domain={[0, 'auto']} />
+                  <YAxis stroke={CHART.axis} fontSize={10} domain={[0, 'auto']} />
                   <Tooltip
                     contentStyle={TOOLTIP_STYLE}
                     labelFormatter={(t) => `${Number(t).toLocaleString()} chars`}
                     formatter={(v: number) => [v.toFixed(1), 'WPM']}
                   />
-                  <Line type="monotone" dataKey="wpm" stroke={CHART.volumeLine} strokeWidth={2} dot={false} />
+                  <Line type="linear" dataKey="wpm" stroke={CHART.volumeLine} strokeWidth={1.5} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             </section>
           </div>
 
           {/* Accuracy trend */}
-          <section className="bg-gray-900 rounded-xl p-5">
-            <PanelHeading>Accuracy trend</PanelHeading>
-            <ResponsiveContainer width="100%" height={180}>
+          <section className="panel p-4">
+            <PanelHeading>accuracy trend</PanelHeading>
+            <ResponsiveContainer width="100%" height={160}>
               <LineChart data={series} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
-                <CartesianGrid stroke={CHART.grid} strokeDasharray="4 4" />
+                <CartesianGrid stroke={CHART.grid} strokeDasharray="2 4" />
                 <XAxis
                   dataKey="endedAt"
                   tickFormatter={(t) => formatShortDate(t)}
                   stroke={CHART.axis}
-                  fontSize={11}
+                  fontSize={10}
                 />
                 <YAxis
                   domain={[0.5, 1]}
                   tickFormatter={(t) => `${(t * 100).toFixed(0)}%`}
                   stroke={CHART.axis}
-                  fontSize={11}
+                  fontSize={10}
                 />
                 <Tooltip
                   contentStyle={TOOLTIP_STYLE}
@@ -261,10 +269,10 @@ export default function DashboardPage() {
                   formatter={(v: number) => [`${(v * 100).toFixed(1)}%`, 'Accuracy']}
                 />
                 <Line
-                  type="monotone"
+                  type="linear"
                   dataKey="accuracy"
                   stroke={CHART.accLine}
-                  strokeWidth={2}
+                  strokeWidth={1.5}
                   dot={false}
                 />
               </LineChart>
@@ -274,21 +282,21 @@ export default function DashboardPage() {
       )}
 
       {/* Per-finger WPM */}
-      <section className="bg-gray-900 rounded-xl p-5">
-        <PanelHeading>Per-finger WPM</PanelHeading>
-        <ResponsiveContainer width="100%" height={220}>
+      <section className="panel p-4">
+        <PanelHeading>per-finger wpm</PanelHeading>
+        <ResponsiveContainer width="100%" height={200}>
           <BarChart data={fingerAgg} margin={{ top: 5, right: 10, bottom: 30, left: 0 }}>
-            <CartesianGrid stroke={CHART.grid} strokeDasharray="4 4" />
+            <CartesianGrid stroke={CHART.grid} strokeDasharray="2 4" />
             <XAxis
               dataKey="finger"
               tickFormatter={(f: string) => f.replace(/^left_|^right_/, '').slice(0, 3)}
               stroke={CHART.axis}
-              fontSize={11}
+              fontSize={10}
               angle={-45}
               textAnchor="end"
               height={50}
             />
-            <YAxis stroke={CHART.axis} fontSize={11} />
+            <YAxis stroke={CHART.axis} fontSize={10} />
             <Tooltip
               contentStyle={TOOLTIP_STYLE}
               formatter={(v: number, _k, p) => {
@@ -309,10 +317,10 @@ export default function DashboardPage() {
       </section>
 
       {/* Layout heatmap */}
-      <section className="bg-gray-900 rounded-xl p-5">
-        <PanelHeading>Weakness heatmap</PanelHeading>
-        <p className="text-xs text-gray-500 mb-3">
-          Dot color shows error rate per key (green = clean, red = high error).
+      <section className="panel p-4">
+        <PanelHeading>weakness heatmap</PanelHeading>
+        <p className="text-[11px] text-fg4 mb-3">
+          dot color shows error rate per key (green clean → red high-error)
         </p>
         <KeyboardVisual
           positions={positions}
@@ -322,138 +330,106 @@ export default function DashboardPage() {
       </section>
 
       {/* Top weak / slow ngrams */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <section className="bg-gray-900 rounded-xl p-5">
-          <PanelHeading>Top 10 weak bigrams</PanelHeading>
-          {topChars.length === 0 ? (
-            <p className="text-gray-500 text-sm">Not enough data yet.</p>
-          ) : (
-            <table className="w-full text-sm">
-              <thead className="text-left text-gray-500 text-xs uppercase tracking-wider">
-                <tr>
-                  <th className="py-2 font-normal">Bigram</th>
-                  <th className="py-2 font-normal">Error rate</th>
-                  <th className="py-2 font-normal text-right">Attempts</th>
-                </tr>
-              </thead>
-              <tbody>
-                {topChars.map((n) => (
-                  <tr key={n.ngram} className="border-t border-gray-800">
-                    <td className="py-2 font-mono text-white">{n.ngram}</td>
-                    <td className="py-2 text-red-400 tabular-nums">
-                      {(n.errorRate * 100).toFixed(1)}%
-                    </td>
-                    <td className="py-2 text-right tabular-nums text-gray-400">
-                      {n.hits + n.misses}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </section>
-
-        <section className="bg-gray-900 rounded-xl p-5">
-          <PanelHeading>Top 10 slow bigrams</PanelHeading>
-          {slowChars.length === 0 ? (
-            <p className="text-gray-500 text-sm">Not enough data yet.</p>
-          ) : (
-            <table className="w-full text-sm">
-              <thead className="text-left text-gray-500 text-xs uppercase tracking-wider">
-                <tr>
-                  <th className="py-2 font-normal">Bigram</th>
-                  <th className="py-2 font-normal">WPM</th>
-                  <th className="py-2 font-normal text-right">Attempts</th>
-                </tr>
-              </thead>
-              <tbody>
-                {slowChars.map((n) => (
-                  <tr key={n.ngram} className="border-t border-gray-800">
-                    <td className="py-2 font-mono text-white">{n.ngram}</td>
-                    <td
-                      className="py-2 text-peach tabular-nums"
-                      title={`${n.meanMs.toFixed(0)} ms / keypress`}
-                    >
-                      {n.wpm.toFixed(1)}
-                    </td>
-                    <td className="py-2 text-right tabular-nums text-gray-400">
-                      {n.hits + n.misses}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </section>
-
-        <section className="bg-gray-900 rounded-xl p-5">
-          <PanelHeading>Top 10 weak words</PanelHeading>
-          {topWords.length === 0 ? (
-            <p className="text-gray-500 text-sm">Not enough data yet.</p>
-          ) : (
-            <table className="w-full text-sm">
-              <thead className="text-left text-gray-500 text-xs uppercase tracking-wider">
-                <tr>
-                  <th className="py-2 font-normal">Word</th>
-                  <th className="py-2 font-normal">Error rate</th>
-                  <th className="py-2 font-normal text-right">Attempts</th>
-                </tr>
-              </thead>
-              <tbody>
-                {topWords.map((n) => (
-                  <tr key={n.ngram} className="border-t border-gray-800">
-                    <td className="py-2 font-mono text-white">{n.ngram}</td>
-                    <td className="py-2 text-red-400 tabular-nums">
-                      {(n.errorRate * 100).toFixed(1)}%
-                    </td>
-                    <td className="py-2 text-right tabular-nums text-gray-400">
-                      {n.hits + n.misses}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </section>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <NgramTable
+          title="top 10 weak bigrams"
+          rows={topChars.map((n) => [n.ngram, `${(n.errorRate * 100).toFixed(1)}%`, n.hits + n.misses])}
+          headers={['bigram', 'err', 'attempts']}
+          accentClass="text-red-400"
+        />
+        <NgramTable
+          title="top 10 slow bigrams"
+          rows={slowChars.map((n) => [n.ngram, n.wpm.toFixed(1), n.hits + n.misses])}
+          headers={['bigram', 'wpm', 'attempts']}
+          accentClass="text-orange-400"
+        />
+        <NgramTable
+          title="top 10 weak words"
+          rows={topWords.map((n) => [n.ngram, `${(n.errorRate * 100).toFixed(1)}%`, n.hits + n.misses])}
+          headers={['word', 'err', 'attempts']}
+          accentClass="text-red-400"
+        />
       </div>
 
       {/* Session history */}
-      <section className="bg-gray-900 rounded-xl p-5">
-        <PanelHeading>Session history</PanelHeading>
+      <section className="panel p-4">
+        <PanelHeading>session history</PanelHeading>
         {sessions && sessions.length > 0 ? (
-          <table className="w-full text-sm">
-            <thead className="text-left text-gray-500 text-xs uppercase tracking-wider">
+          <table className="w-full text-sm font-mono">
+            <thead className="text-left text-fg4 text-[10px] uppercase tracking-widest">
               <tr>
-                <th className="py-2 font-normal">When</th>
-                <th className="py-2 font-normal">Mode</th>
-                <th className="py-2 font-normal text-right">WPM</th>
-                <th className="py-2 font-normal text-right">Accuracy</th>
-                <th className="py-2 font-normal text-right">Chars</th>
+                <th className="py-1 font-normal">when</th>
+                <th className="py-1 font-normal">mode</th>
+                <th className="py-1 font-normal text-right">wpm</th>
+                <th className="py-1 font-normal text-right">acc</th>
+                <th className="py-1 font-normal text-right">chars</th>
               </tr>
             </thead>
             <tbody>
               {sessions.slice(0, 20).map((s) => (
-                <tr key={s.id} className="border-t border-gray-800">
-                  <td className="py-2 text-gray-300">{formatRelative(s.ended_at)}</td>
-                  <td className="py-2 text-gray-400 capitalize">{s.mode}</td>
-                  <td className="py-2 text-right text-white tabular-nums">{s.wpm.toFixed(1)}</td>
-                  <td className="py-2 text-right text-gray-300 tabular-nums">
+                <tr key={s.id} className="border-t border-bg4">
+                  <td className="py-1 text-fg2">{formatRelative(s.ended_at)}</td>
+                  <td className="py-1 text-fg3">{s.mode}</td>
+                  <td className="py-1 text-right text-fg_h tabular-nums">{s.wpm.toFixed(1)}</td>
+                  <td className="py-1 text-right text-fg2 tabular-nums">
                     {(s.accuracy * 100).toFixed(0)}%
                   </td>
-                  <td className="py-2 text-right text-gray-400 tabular-nums">{s.chars_typed}</td>
+                  <td className="py-1 text-right text-fg3 tabular-nums">{s.chars_typed}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         ) : (
-          <p className="text-gray-500 text-sm">No sessions yet.</p>
+          <p className="text-fg4 text-sm">No sessions yet.</p>
         )}
       </section>
     </div>
   );
 }
 
-// ─── Date helpers ────────────────────────────────────────────────────────
+// ─── ngram table helper ───────────────────────────────────────────────
+
+function NgramTable({
+  title,
+  headers,
+  rows,
+  accentClass,
+}: {
+  title: string;
+  headers: readonly [string, string, string];
+  rows: readonly (readonly [string, string, number])[];
+  accentClass: string;
+}): JSX.Element {
+  return (
+    <section className="panel p-4">
+      <PanelHeading>{title}</PanelHeading>
+      {rows.length === 0 ? (
+        <p className="text-fg4 text-sm">Not enough data yet.</p>
+      ) : (
+        <table className="w-full text-sm font-mono">
+          <thead className="text-left text-fg4 text-[10px] uppercase tracking-widest">
+            <tr>
+              <th className="py-1 font-normal">{headers[0]}</th>
+              <th className="py-1 font-normal">{headers[1]}</th>
+              <th className="py-1 font-normal text-right">{headers[2]}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(([k, v, attempts]) => (
+              <tr key={k} className="border-t border-bg4">
+                <td className="py-1 text-fg_h">{k}</td>
+                <td className={`py-1 tabular-nums ${accentClass}`}>{v}</td>
+                <td className="py-1 text-right tabular-nums text-fg3">{attempts}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
+// ─── Date helpers ─────────────────────────────────────────────────────
 
 function formatShortDate(iso: string): string {
   const d = new Date(iso);

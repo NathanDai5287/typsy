@@ -2,12 +2,109 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ──────────────────────────────────────────────────────────────────────────
+   Terminal-aesthetic base.
+
+   Everything monospace, sharp corners, single-pixel borders. No gradients,
+   no rounded fills, no shadow stacks. The visual identity comes from the
+   Gruvbox tokens in tailwind.config.js + a couple of utility classes
+   defined here for things Tailwind doesn't express well (caret blink,
+   scrollbar, focus styles).
+   ───────────────────────────────────────────────────────────────────────── */
+
 @layer base {
-  body {
-    @apply bg-gray-950 text-gray-100 antialiased;
+  html, body, #root {
+    height: 100%;
   }
 
-  *:focus-visible {
-    @apply outline outline-2 outline-offset-2 outline-blue-400;
+  body {
+    @apply bg-bg_h text-fg1 antialiased font-mono;
+    /* Disable the default OS-y rounded UI so radio/checkbox/range chrome
+       matches the rest of the rectangular layout. */
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
+
+  /* Visible, layout-stable focus ring used by every interactive element.
+     Keep it bright (yellow accent) so the keyboard-driven flow always
+     surfaces the active control without hunting. */
+  *:focus-visible {
+    @apply outline outline-1 outline-offset-2 outline-yellow-400;
+  }
+
+  /* Suppress the dotted underline under buttons in some themes. */
+  button:focus { outline: none; }
+
+  /* Custom scrollbar — narrow, terminal-y. */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: #3c3836; /* gruv.bg4 */
+    border-radius: 0;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: #504945; /* gruv.bg5 */ }
+}
+
+@layer components {
+  /* A bracketed, hollow button:  [ Save ]
+     Used for primary-and-secondary actions across the app. */
+  .btn {
+    @apply inline-flex items-center gap-2 px-3 py-1 border border-bg4 bg-bg0 text-fg0
+           hover:border-yellow-400 hover:text-yellow-400 disabled:opacity-40
+           disabled:hover:border-bg4 disabled:hover:text-fg0 transition-none
+           font-mono text-sm select-none cursor-pointer;
+  }
+  .btn::before { content: '['; @apply text-fg4 mr-1; }
+  .btn::after  { content: ']'; @apply text-fg4 ml-1; }
+  .btn:hover::before, .btn:hover::after { @apply text-yellow-400; }
+
+  /* Primary variant: yellow text + background. */
+  .btn-primary {
+    @apply text-yellow-400 border-yellow-400 bg-transparent
+           hover:bg-yellow-400 hover:text-bg_h;
+  }
+  .btn-primary:hover::before, .btn-primary:hover::after { @apply text-bg_h; }
+
+  /* Danger variant. */
+  .btn-danger {
+    @apply text-red-400 border-red-400 hover:bg-red-400 hover:text-bg_h;
+  }
+  .btn-danger:hover::before, .btn-danger:hover::after { @apply text-bg_h; }
+
+  /* Subtle "less weight" variant for non-essential actions. */
+  .btn-ghost {
+    @apply border-transparent text-fg3 hover:text-fg_h hover:border-bg4
+           hover:bg-transparent;
+  }
+  .btn-ghost:hover::before, .btn-ghost:hover::after { @apply text-fg_h; }
+
+  /* A panel: single-pixel border, sharp corners, no shadow. */
+  .panel {
+    @apply border border-bg4 bg-bg0;
+  }
+
+  /* Section heading with a leading marker, inspired by manpages. */
+  .panel-heading {
+    @apply text-xs uppercase tracking-widest text-fg4 mb-2;
+  }
+  .panel-heading::before { content: '── '; }
+  .panel-heading::after  { content: ' ──'; }
+
+  /* Keycap visual — used inline to indicate a keyboard shortcut. */
+  .kbd {
+    @apply inline-flex items-center justify-center px-1.5 py-0 min-w-[1.25rem]
+           text-[11px] leading-[1.4rem] font-mono border border-bg4 bg-bg0
+           text-fg1;
+  }
+
+  /* Caret marker that follows the cursor in the typing area. Blinks
+     softly so it reads as "live" without being distracting. */
+  .caret {
+    @apply text-yellow-400;
+    animation: caret-blink 1s step-end infinite;
+  }
+}
+
+@keyframes caret-blink {
+  50% { opacity: 0; }
 }

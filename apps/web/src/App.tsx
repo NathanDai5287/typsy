@@ -2,6 +2,10 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { fetchUser } from './lib/api.ts';
 import Nav from './components/Nav.tsx';
+import StatusBar from './components/StatusBar.tsx';
+import HelpOverlay from './components/HelpOverlay.tsx';
+import LeaderHint from './components/LeaderHint.tsx';
+import { KeymapProvider } from './lib/keymapContext.tsx';
 import OnboardingPage from './pages/OnboardingPage.tsx';
 import PracticePage from './pages/PracticePage.tsx';
 import DashboardPage from './pages/DashboardPage.tsx';
@@ -10,7 +14,14 @@ import LayoutsPage from './pages/LayoutsPage.tsx';
 import FingeringPage from './pages/FingeringPage.tsx';
 import SettingsPage from './pages/SettingsPage.tsx';
 
-export default function App() {
+/**
+ * Top-level shell.
+ *
+ * Layout is a single column: nav (top), main (scrollable), status bar
+ * (bottom). The keymap provider wraps everything so any descendant can
+ * register page-level shortcuts and they show up in the help overlay.
+ */
+export default function App(): JSX.Element {
   const { data, isLoading, isError } = useQuery({
     queryKey: ['user'],
     queryFn: fetchUser,
@@ -18,16 +29,16 @@ export default function App() {
 
   if (isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center text-gray-400">
-        Loading…
+      <div className="flex h-screen items-center justify-center text-fg3 font-mono">
+        loading…
       </div>
     );
   }
 
   if (isError) {
     return (
-      <div className="flex h-screen items-center justify-center text-red-400">
-        Could not connect to server. Make sure the backend is running on port 3001.
+      <div className="flex h-screen items-center justify-center text-red-400 font-mono px-4 text-center">
+        Could not connect to the server. Make sure the backend is running on port 3001.
       </div>
     );
   }
@@ -35,28 +46,33 @@ export default function App() {
   const needsOnboarding = !data || data.layout_progress.length === 0;
 
   return (
-    <div className="min-h-screen flex flex-col">
-      {!needsOnboarding && <Nav />}
-      <main className="flex-1">
-        <Routes>
-          <Route path="/onboarding" element={<OnboardingPage />} />
-          <Route
-            path="/"
-            element={
-              needsOnboarding ? (
-                <Navigate to="/onboarding" replace />
-              ) : (
-                <PracticePage />
-              )
-            }
-          />
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/optimize" element={<OptimizePage />} />
-          <Route path="/layouts" element={<LayoutsPage />} />
-          <Route path="/fingering" element={<FingeringPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-        </Routes>
-      </main>
-    </div>
+    <KeymapProvider>
+      <div className="min-h-screen flex flex-col bg-bg_h text-fg1 font-mono">
+        {!needsOnboarding && <Nav />}
+        <main className="flex-1 pb-7">
+          <Routes>
+            <Route path="/onboarding" element={<OnboardingPage />} />
+            <Route
+              path="/"
+              element={
+                needsOnboarding ? (
+                  <Navigate to="/onboarding" replace />
+                ) : (
+                  <PracticePage />
+                )
+              }
+            />
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/optimize" element={<OptimizePage />} />
+            <Route path="/layouts" element={<LayoutsPage />} />
+            <Route path="/fingering" element={<FingeringPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+          </Routes>
+        </main>
+        {!needsOnboarding && <StatusBar />}
+        <HelpOverlay />
+        <LeaderHint />
+      </div>
+    </KeymapProvider>
   );
 }

@@ -12,7 +12,7 @@ import FingeringEditor, { buildDefaultPosFingerMap } from '../components/Fingeri
  * just a visual reference — switching it doesn't change which finger is
  * assigned to a given physical key.
  */
-export default function FingeringPage() {
+export default function FingeringPage(): JSX.Element {
   const queryClient = useQueryClient();
 
   const { data: userData } = useQuery({ queryKey: ['user'], queryFn: fetchUser });
@@ -25,10 +25,6 @@ export default function FingeringPage() {
 
   const onboardedProgress = userData?.layout_progress ?? [];
 
-  // The keyboard is shown purely for visual reference. Default to the
-  // active layout (server returns it as layout_progress[0]); user can
-  // pick any onboarded layout to confirm the fingering looks right with
-  // its character placement.
   const [displayLayoutId, setDisplayLayoutId] = useState<number | null>(null);
   useEffect(() => {
     if (displayLayoutId === null && onboardedProgress.length > 0) {
@@ -57,13 +53,11 @@ export default function FingeringPage() {
   const saveMutation = useMutation({
     mutationFn: postUserFingering,
     onSuccess: (user) => {
-      // Patch the cached user response so other pages see the new map
-      // immediately, then invalidate to refetch the canonical version.
       queryClient.setQueryData<UserResponse | undefined>(['user'], (prev) =>
         prev ? { ...prev, user } : prev,
       );
       void queryClient.invalidateQueries({ queryKey: ['user'] });
-      setStatusMessage('Fingering saved.');
+      setStatusMessage('Saved.');
     },
     onError: (err) => {
       setStatusMessage(`Could not save: ${err instanceof Error ? err.message : 'unknown error'}`);
@@ -71,17 +65,17 @@ export default function FingeringPage() {
   });
 
   if (!userData || !layouts) {
-    return (
-      <div className="flex h-[60vh] items-center justify-center text-gray-400">
-        Loading…
-      </div>
-    );
+    return <div className="flex h-[60vh] items-center justify-center text-fg3">loading…</div>;
   }
 
   if (onboardedProgress.length === 0) {
     return (
-      <div className="max-w-3xl mx-auto px-6 py-12 text-gray-400">
-        Set up a layout first on the <a href="/layouts" className="text-blue-400 underline">Layouts</a> page.
+      <div className="max-w-3xl mx-auto px-4 py-8 text-fg3">
+        Set up a layout first on the{' '}
+        <a href="/layouts" className="text-yellow-400 underline">
+          layouts
+        </a>{' '}
+        page.
       </div>
     );
   }
@@ -97,22 +91,20 @@ export default function FingeringPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-6 py-8 space-y-6">
+    <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
       <header>
-        <h1 className="text-3xl font-bold text-white">Fingering</h1>
-        <p className="text-gray-400 mt-1">
-          Override the default column-based finger assignments for your physical keyboard.
-          Saved fingerings are tied to physical key positions, so they apply to every layout
-          you practice — used for keyboard visualization, per-finger stats, and SFB detection.
+        <h1 className="text-xl text-fg_h">fingering</h1>
+        <p className="text-fg3 text-sm mt-0.5">
+          Override the column-based defaults for your physical keyboard. Stored
+          per physical position so the same map applies to every layout —
+          drives the on-screen keyboard, per-finger stats, and SFB detection.
         </p>
       </header>
 
       {/* Layout picker — pure visual aid, doesn't change the fingering data */}
       {onboardedProgress.length > 1 && (
-        <div className="space-y-2">
-          <p className="text-xs uppercase tracking-wider text-gray-500">
-            Show with characters from
-          </p>
+        <div className="space-y-1.5">
+          <p className="panel-heading">show with characters from</p>
           <div className="flex flex-wrap gap-2">
             {onboardedProgress.map((p) => {
               const layout = layoutsById.get(p.layout_id);
@@ -125,10 +117,8 @@ export default function FingeringPage() {
                   onClick={() => setDisplayLayoutId(p.layout_id)}
                   aria-pressed={isSelected}
                   className={[
-                    'px-4 py-1.5 text-sm rounded-lg border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400',
-                    isSelected
-                      ? 'border-blue-500 bg-blue-600 text-crust font-medium'
-                      : 'border-gray-700 text-gray-300 hover:border-gray-500',
+                    'btn',
+                    isSelected ? 'btn-primary' : '',
                   ].join(' ')}
                 >
                   {layout.name}
@@ -140,16 +130,16 @@ export default function FingeringPage() {
       )}
 
       {displayLayout && (
-        <section className="space-y-4">
+        <section className="space-y-3">
           <div className="flex items-baseline justify-between">
-            <h2 className="text-lg font-semibold text-white">Your fingering</h2>
+            <h2 className="panel-heading">your fingering</h2>
             <button
               type="button"
               onClick={handleResetToDefault}
               disabled={saveMutation.isPending}
-              className="text-xs text-gray-400 hover:text-gray-200 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded px-1"
+              className="text-xs text-fg3 hover:text-fg_h underline disabled:opacity-50"
             >
-              Reset saved fingering to default
+              reset saved fingering to default
             </button>
           </div>
 
@@ -168,7 +158,7 @@ export default function FingeringPage() {
           {statusMessage && (
             <p
               className={[
-                'text-sm',
+                'text-sm font-mono',
                 saveMutation.isError ? 'text-red-400' : 'text-green-400',
               ].join(' ')}
             >

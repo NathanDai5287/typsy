@@ -1,134 +1,175 @@
 /** @type {import('tailwindcss').Config} */
 
-// Catppuccin Mocha — https://catppuccin.com/palette
-const mocha = {
-  rosewater: '#f5e0dc',
-  flamingo:  '#f2cdcd',
-  pink:      '#f5c2e7',
-  mauve:     '#cba6f7',
-  red:       '#f38ba8',
-  maroon:    '#eba0ac',
-  peach:     '#fab387',
-  yellow:    '#f9e2af',
-  green:     '#a6e3a1',
-  teal:      '#94e2d5',
-  sky:       '#89dceb',
-  sapphire:  '#74c7ec',
-  blue:      '#89b4fa',
-  lavender:  '#b4befe',
-  text:      '#cdd6f4',
-  subtext1:  '#bac2de',
-  subtext0:  '#a6adc8',
-  overlay2:  '#9399b2',
-  overlay1:  '#7f849c',
-  overlay0:  '#6c7086',
-  surface2:  '#585b70',
-  surface1:  '#45475a',
-  surface0:  '#313244',
-  base:      '#1e1e2e',
-  mantle:    '#181825',
-  crust:     '#11111b',
+/**
+ * Gruvbox Material Dark Hard — https://github.com/sainnhe/gruvbox-material
+ *
+ * Warm low-contrast variant of classic Gruvbox. Picked for the Typsy UI
+ * revamp: feels like a vim/tmux terminal session, sharp corners, monospace
+ * everywhere, no gradients or fancy fills. Background pulled toward the
+ * "hard" black so panels / chrome read as inset against the canvas.
+ */
+const gruv = {
+  // Surfaces (darker → lighter)
+  bg0_h:    '#0d0e0f', // canvas (slightly darker than upstream #1d2021 for higher contrast against panels)
+  bg0:      '#161819', // base panel
+  bg1:      '#1d2021', // inset panel / hover
+  bg2:      '#282828', // raised panel
+  bg3:      '#32302f', // hover / focus on raised
+  bg4:      '#3c3836', // border-strong
+  bg5:      '#504945', // disabled fill / border on raised
+
+  // Text (dim → bright)
+  fg4:      '#7c6f64', // muted / commentary
+  fg3:      '#928374', // subtext
+  fg2:      '#a89984', // body-2
+  fg1:      '#bdae93', // body
+  fg0:      '#d4be98', // emphatic body
+  fg_h:     '#ddc7a1', // bright text
+
+  // Accents (muted Gruvbox Material)
+  red:      '#ea6962',
+  orange:   '#e78a4e',
+  yellow:   '#d8a657',
+  green:    '#a9b665',
+  aqua:     '#89b482',
+  blue:     '#7daea3',
+  purple:   '#d3869b',
+
+  // Brighter accents for hover/active states
+  red_h:    '#fb4934',
+  orange_h: '#fe8019',
+  yellow_h: '#fabd2f',
+  green_h:  '#b8bb26',
+  aqua_h:   '#8ec07c',
+  blue_h:   '#83a598',
+  purple_h: '#d3869b',
 };
 
 /**
- * Map Tailwind's standard color scales onto Catppuccin Mocha tones so the
- * existing class names (bg-gray-900, text-blue-400, …) automatically render
- * with the new palette. Hover pairs (e.g. bg-blue-600 → hover:bg-blue-500)
- * still produce a visible lightness shift.
+ * Map Tailwind's standard color scales onto Gruvbox tones so the existing
+ * class names (bg-gray-900, text-blue-400, …) automatically render with
+ * the new palette. Lower numbers = lighter / accent, higher numbers =
+ * darker / surface, mirroring Tailwind's gray semantics.
+ *
+ * The legacy `crust` / `mantle` / `surface*` / `text` etc. names from the
+ * old Catppuccin theme are also kept as aliases to surfaces so any
+ * remaining code that referenced them still resolves to a sensible tone
+ * during the revamp.
  */
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
       fontFamily: {
-        mono: ['JetBrains Mono', 'Fira Code', 'Cascadia Code', 'monospace'],
+        // The whole UI is monospace now — terminal vibes.
+        mono: ['JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Menlo', 'Monaco', 'monospace'],
+        sans: ['JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Menlo', 'Monaco', 'monospace'],
       },
       colors: {
-        // Named Catppuccin tones, available directly as e.g. `bg-mauve`,
-        // `text-subtext1`, `border-surface2`, etc.
-        rosewater: mocha.rosewater,
-        flamingo:  mocha.flamingo,
-        mauve:     mocha.mauve,
-        maroon:    mocha.maroon,
-        peach:     mocha.peach,
-        teal:      mocha.teal,
-        sky:       mocha.sky,
-        sapphire:  mocha.sapphire,
-        lavender:  mocha.lavender,
-        text:      mocha.text,
-        subtext0:  mocha.subtext0,
-        subtext1:  mocha.subtext1,
-        overlay0:  mocha.overlay0,
-        overlay1:  mocha.overlay1,
-        overlay2:  mocha.overlay2,
-        surface0:  mocha.surface0,
-        surface1:  mocha.surface1,
-        surface2:  mocha.surface2,
-        base:      mocha.base,
-        mantle:    mocha.mantle,
-        crust:     mocha.crust,
+        // ── Named Gruvbox tones ──────────────────────────────────────
+        bg_h:     gruv.bg0_h,
+        bg0:      gruv.bg0,
+        bg1:      gruv.bg1,
+        bg2:      gruv.bg2,
+        bg3:      gruv.bg3,
+        bg4:      gruv.bg4,
+        bg5:      gruv.bg5,
+        fg0:      gruv.fg0,
+        fg1:      gruv.fg1,
+        fg2:      gruv.fg2,
+        fg3:      gruv.fg3,
+        fg4:      gruv.fg4,
+        fg_h:     gruv.fg_h,
+        accent:   gruv.yellow,
 
-        // ── Overrides for the standard Tailwind palette ──────────────────
-        // Map gray scale onto Catppuccin's mantle → text spectrum.
-        white: mocha.text,
-        black: mocha.crust,
+        // Aliases for compatibility with old Catppuccin names — kept so
+        // the rare leftover className still resolves. New code should
+        // prefer the explicit Gruvbox tokens above.
+        crust:    gruv.bg0_h,
+        mantle:   gruv.bg0,
+        base:     gruv.bg1,
+        surface0: gruv.bg2,
+        surface1: gruv.bg3,
+        surface2: gruv.bg4,
+        overlay0: gruv.fg4,
+        overlay1: gruv.fg3,
+        overlay2: gruv.fg2,
+        subtext0: gruv.fg2,
+        subtext1: gruv.fg1,
+        text:     gruv.fg0,
+        rosewater: gruv.orange,
+        flamingo:  gruv.orange,
+        mauve:     gruv.purple,
+        maroon:    gruv.red,
+        peach:     gruv.orange,
+        teal:      gruv.aqua,
+        sky:       gruv.blue,
+        sapphire:  gruv.blue,
+        lavender:  gruv.blue,
+
+        // ── Standard scales remapped to Gruvbox ──────────────────────
+        white:    gruv.fg_h,
+        black:    gruv.bg0_h,
         gray: {
-          50:  mocha.text,
-          100: mocha.text,
-          200: mocha.subtext1,
-          300: mocha.subtext0,
-          400: mocha.overlay2,
-          500: mocha.overlay1,
-          600: mocha.overlay0,
-          700: mocha.surface2,
-          800: mocha.surface1,
-          900: mocha.surface0,
-          950: mocha.mantle,
+          50:  gruv.fg_h,
+          100: gruv.fg0,
+          200: gruv.fg1,
+          300: gruv.fg2,
+          400: gruv.fg3,
+          500: gruv.fg4,
+          600: gruv.bg5,
+          700: gruv.bg4,
+          800: gruv.bg3,
+          900: gruv.bg1,
+          950: gruv.bg0,
         },
-
-        // Accent shades: lighter sibling for 100–500 (used as hover/focus
-        // targets), main accent for 600+ (used as primary fills).
         blue: {
-          50:  mocha.lavender, 100: mocha.lavender, 200: mocha.lavender,
-          300: mocha.lavender, 400: mocha.lavender, 500: mocha.lavender,
-          600: mocha.blue,     700: mocha.blue,     800: mocha.blue,
-          900: mocha.blue,     950: mocha.blue,
+          50:  gruv.blue_h, 100: gruv.blue_h, 200: gruv.blue_h,
+          300: gruv.blue_h, 400: gruv.blue_h, 500: gruv.blue,
+          600: gruv.blue,   700: gruv.blue,   800: gruv.blue,
+          900: gruv.blue,   950: gruv.blue,
         },
         red: {
-          50:  mocha.maroon, 100: mocha.maroon, 200: mocha.maroon,
-          300: mocha.maroon, 400: mocha.red,    500: mocha.red,
-          600: mocha.red,    700: mocha.red,    800: mocha.red,
-          900: mocha.red,    950: mocha.red,
+          50:  gruv.red_h, 100: gruv.red_h, 200: gruv.red_h,
+          300: gruv.red_h, 400: gruv.red_h, 500: gruv.red,
+          600: gruv.red,   700: gruv.red,   800: gruv.red,
+          900: gruv.red,   950: gruv.red,
         },
         green: {
-          50:  mocha.teal,  100: mocha.teal,  200: mocha.teal,
-          300: mocha.teal,  400: mocha.green, 500: mocha.green,
-          600: mocha.green, 700: mocha.green, 800: mocha.green,
-          900: mocha.green, 950: mocha.green,
+          50:  gruv.green_h, 100: gruv.green_h, 200: gruv.green_h,
+          300: gruv.green_h, 400: gruv.green_h, 500: gruv.green,
+          600: gruv.green,   700: gruv.green,   800: gruv.green,
+          900: gruv.green,   950: gruv.green,
         },
         yellow: {
-          50:  mocha.yellow, 100: mocha.yellow, 200: mocha.yellow,
-          300: mocha.yellow, 400: mocha.yellow, 500: mocha.yellow,
-          600: mocha.peach,  700: mocha.peach,  800: mocha.peach,
-          900: mocha.peach,  950: mocha.peach,
+          50:  gruv.yellow_h, 100: gruv.yellow_h, 200: gruv.yellow_h,
+          300: gruv.yellow_h, 400: gruv.yellow_h, 500: gruv.yellow,
+          600: gruv.yellow,   700: gruv.yellow,   800: gruv.yellow,
+          900: gruv.yellow,   950: gruv.yellow,
+        },
+        orange: {
+          50:  gruv.orange_h, 100: gruv.orange_h, 200: gruv.orange_h,
+          300: gruv.orange_h, 400: gruv.orange_h, 500: gruv.orange,
+          600: gruv.orange,   700: gruv.orange,   800: gruv.orange,
+          900: gruv.orange,   950: gruv.orange,
         },
         purple: {
-          50:  mocha.mauve, 100: mocha.mauve, 200: mocha.mauve,
-          300: mocha.mauve, 400: mocha.mauve, 500: mocha.mauve,
-          600: mocha.mauve, 700: mocha.mauve, 800: mocha.mauve,
-          900: mocha.mauve, 950: mocha.mauve,
+          50:  gruv.purple_h, 100: gruv.purple_h, 200: gruv.purple_h,
+          300: gruv.purple_h, 400: gruv.purple_h, 500: gruv.purple,
+          600: gruv.purple,   700: gruv.purple,   800: gruv.purple,
+          900: gruv.purple,   950: gruv.purple,
         },
         cyan: {
-          50:  mocha.sky, 100: mocha.sky, 200: mocha.sky,
-          300: mocha.sky, 400: mocha.sky, 500: mocha.sky,
-          600: mocha.sky, 700: mocha.sapphire, 800: mocha.sapphire,
-          900: mocha.sapphire, 950: mocha.sapphire,
+          50:  gruv.aqua_h, 100: gruv.aqua_h, 200: gruv.aqua_h,
+          300: gruv.aqua_h, 400: gruv.aqua_h, 500: gruv.aqua,
+          600: gruv.aqua,   700: gruv.aqua,   800: gruv.aqua,
+          900: gruv.aqua,   950: gruv.aqua,
         },
         pink: {
-          50:  mocha.pink, 100: mocha.pink, 200: mocha.pink,
-          300: mocha.pink, 400: mocha.pink, 500: mocha.pink,
-          600: mocha.pink, 700: mocha.pink, 800: mocha.pink,
-          900: mocha.pink, 950: mocha.pink,
+          50:  gruv.purple_h, 100: gruv.purple_h, 200: gruv.purple_h,
+          300: gruv.purple_h, 400: gruv.purple_h, 500: gruv.purple,
+          600: gruv.purple,   700: gruv.purple,   800: gruv.purple,
+          900: gruv.purple,   950: gruv.purple,
         },
       },
     },

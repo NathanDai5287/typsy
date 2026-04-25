@@ -17,7 +17,7 @@ interface LayoutCardProps {
   onSelect: () => void;
 }
 
-function LayoutCard({ layout, selected, onSelect }: LayoutCardProps) {
+function LayoutCard({ layout, selected, onSelect }: LayoutCardProps): JSX.Element {
   const positions: KeyPosition[] = JSON.parse(layout.key_positions_json);
   const rows = [0, 1, 2].map((r) =>
     positions.filter((p) => p.row === r).sort((a, b) => a.col - b.col),
@@ -30,20 +30,29 @@ function LayoutCard({ layout, selected, onSelect }: LayoutCardProps) {
       onKeyDown={(e) => e.key === 'Enter' && onSelect()}
       aria-pressed={selected}
       className={[
-        'rounded-xl border-2 p-5 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400',
-        selected
-          ? 'border-blue-400 bg-gray-800'
-          : 'border-gray-700 bg-gray-900 hover:border-gray-500',
+        'panel p-4 text-left transition-none focus-visible:outline-none',
+        selected ? 'border-yellow-400' : 'hover:border-fg3',
       ].join(' ')}
     >
-      <div className="font-semibold text-white mb-3">{layout.name}</div>
-      <div className="font-mono text-xs space-y-1">
+      <div className="font-semibold text-fg_h mb-2 flex items-center gap-2">
+        <span>{layout.name}</span>
+        {selected && (
+          <span className="text-[10px] uppercase tracking-widest text-yellow-400 border border-yellow-400 px-1">
+            selected
+          </span>
+        )}
+      </div>
+      <div className="font-mono text-[11px] space-y-1">
         {rows.map((row, ri) => (
-          <div key={ri} className="flex gap-1">
+          <div
+            key={ri}
+            className="flex gap-0.5"
+            style={{ paddingLeft: ri === 1 ? '6px' : ri === 2 ? '14px' : 0 }}
+          >
             {row.map((pos) => (
               <span
                 key={pos.char}
-                className="w-6 h-6 flex items-center justify-center rounded bg-gray-700 text-gray-300"
+                className="w-5 h-5 flex items-center justify-center bg-bg2 text-fg2 border border-bg4"
               >
                 {pos.char}
               </span>
@@ -58,7 +67,6 @@ function LayoutCard({ layout, selected, onSelect }: LayoutCardProps) {
 // ─── Step 3: Fingering editor (thin wrapper around the shared editor) ────────
 
 interface OnboardingFingeringStepProps {
-  /** Layout used purely for the visual reference (which chars sit on which keys). */
   displayLayout: Layout;
   onSave: (posFingeringMapJson: string) => void;
   isSaving: boolean;
@@ -68,7 +76,7 @@ function OnboardingFingeringStep({
   displayLayout,
   onSave,
   isSaving,
-}: OnboardingFingeringStepProps) {
+}: OnboardingFingeringStepProps): JSX.Element {
   const positions: KeyPosition[] = useMemo(
     () => JSON.parse(displayLayout.key_positions_json),
     [displayLayout],
@@ -91,7 +99,7 @@ function OnboardingFingeringStep({
 
 type Step = 1 | 2 | 3;
 
-export default function OnboardingPage() {
+export default function OnboardingPage(): JSX.Element {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [step, setStep] = useState<Step>(1);
@@ -103,9 +111,7 @@ export default function OnboardingPage() {
     queryFn: fetchLayouts,
   });
 
-  // Default the daily driver to QWERTY — the layout the overwhelming
-  // majority of users come in already typing on. Falls back to the first
-  // available layout if QWERTY somehow isn't present.
+  // Default daily driver to QWERTY (overwhelming-majority assumption).
   useEffect(() => {
     if (layouts.length > 0 && dailyDriverId === null) {
       const qwerty = layouts.find((l) => l.name === 'QWERTY') ?? layouts[0];
@@ -113,8 +119,6 @@ export default function OnboardingPage() {
     }
   }, [layouts, dailyDriverId]);
 
-  // Step-2 candidates: every layout except the one already chosen as the
-  // daily driver. Default to Colemak if available, else the first option.
   const learnOptions = useMemo(
     () => layouts.filter((l) => l.id !== dailyDriverId),
     [layouts, dailyDriverId],
@@ -129,40 +133,51 @@ export default function OnboardingPage() {
       learnLayoutId === null ||
       !learnOptions.some((l) => l.id === learnLayoutId)
     ) {
-      const colemak =
-        learnOptions.find((l) => l.name === 'Colemak') ?? learnOptions[0];
+      const colemak = learnOptions.find((l) => l.name === 'Colemak') ?? learnOptions[0];
       setLearnLayoutId(colemak.id);
     }
   }, [learnOptions, learnLayoutId]);
 
-  // ─── Keyboard navigation ──────────────────────────────────────────────────
-  // Step 1 cycles through the full layout list; step 2 cycles through the
-  // learn-layout candidates only. Enter advances each step. Step 3 leaves
-  // Enter alone — the fingering editor handles its own clicks.
+  // ─── Keyboard navigation (arrow keys to pick layouts in steps 1/2) ───────
+  // Uses event.code so navigation is layout-agnostic. Step 3's keymap is
+  // owned by the FingeringEditor. Modified keys (Shift+S etc.) belong to
+  // the global keymap — don't double-handle them here.
   const handleStepKey = useCallback(
     (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
       if (step === 1) {
         if (layouts.length === 0) return;
         const currentIdx = layouts.findIndex((l) => l.id === dailyDriverId);
-        if (e.key === 'ArrowRight') {
+        if (e.code === 'ArrowRight' || e.code === 'KeyL') {
+          e.preventDefault();
           const next = (currentIdx + 1 + layouts.length) % layouts.length;
           setDailyDriverId(layouts[next].id);
-        } else if (e.key === 'ArrowLeft') {
+        } else if (e.code === 'ArrowLeft' || e.code === 'KeyH') {
+          e.preventDefault();
           const prev = (currentIdx - 1 + layouts.length) % layouts.length;
           setDailyDriverId(layouts[prev].id);
-        } else if (e.key === 'Enter' && dailyDriverId !== null) {
+        } else if (e.code === 'Enter' && dailyDriverId !== null) {
+          e.preventDefault();
           setStep(2);
         }
       } else if (step === 2) {
         if (learnOptions.length === 0) return;
         const currentIdx = learnOptions.findIndex((l) => l.id === learnLayoutId);
-        if (e.key === 'ArrowRight') {
+        if (e.code === 'ArrowRight' || e.code === 'KeyL') {
+          e.preventDefault();
           const next = (currentIdx + 1 + learnOptions.length) % learnOptions.length;
           setLearnLayoutId(learnOptions[next].id);
-        } else if (e.key === 'ArrowLeft') {
+        } else if (e.code === 'ArrowLeft' || e.code === 'KeyH') {
+          e.preventDefault();
           const prev = (currentIdx - 1 + learnOptions.length) % learnOptions.length;
           setLearnLayoutId(learnOptions[prev].id);
-        } else if (e.key === 'Enter' && learnLayoutId !== null) {
+        } else if (e.code === 'Enter' && learnLayoutId !== null) {
+          e.preventDefault();
+          setStep(3);
+        } else if (e.code === 'KeyS') {
+          // Skip the optional learn step.
+          e.preventDefault();
+          setLearnLayoutId(null);
           setStep(3);
         }
       }
@@ -183,10 +198,6 @@ export default function OnboardingPage() {
       learn_layout_id: number | null;
       fingering_map_json: string;
     }) => {
-      // Save the user-level fingering first so the response from
-      // initial-setup picks it up via the SELECT * inside that handler.
-      // Both endpoints touch only the current user's rows; ordering is
-      // about user-visible state, not concurrency.
       await postUserFingering({ fingering_map_json: input.fingering_map_json });
       return postInitialSetup({
         daily_driver_layout_id: input.daily_driver_layout_id,
@@ -194,28 +205,18 @@ export default function OnboardingPage() {
       });
     },
     onSuccess: (response) => {
-      // Seed the user query synchronously so App.tsx sees layout_progress
-      // populated before we navigate. Otherwise the redirect at "/" would
-      // race the refetch from invalidateQueries, see needsOnboarding=true,
-      // and bounce the user back into onboarding a second time.
       queryClient.setQueryData<UserResponse>(['user'], response);
       navigate('/');
     },
   });
 
   const dailyDriverLayout = layouts.find((l) => l.id === dailyDriverId);
-
-  // The fingering editor needs a layout to draw the keyboard against. We
-  // show the daily driver's chars: the user has the strongest mental model
-  // for finger placement on the layout they already type on. Confirming
-  // "left index here" once carries over to every other layout because the
-  // map is keyed by physical position, not character.
   const fingeringDisplayLayout = dailyDriverLayout ?? null;
 
   if (isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center text-gray-400">
-        Loading layouts…
+      <div className="flex h-screen items-center justify-center text-fg3">
+        loading layouts…
       </div>
     );
   }
@@ -231,26 +232,31 @@ export default function OnboardingPage() {
 
   const stepTitle =
     step === 1
-      ? 'Pick the layout you already use day to day'
+      ? 'pick the layout you already use day-to-day'
       : step === 2
-        ? 'Pick a layout you want to learn (optional)'
-        : 'Confirm your fingering';
+        ? 'pick a layout you want to learn (optional)'
+        : 'confirm your fingering';
 
   return (
-    <div className="max-w-3xl mx-auto px-6 py-12">
-      <h1 className="text-3xl font-bold text-white mb-2">Welcome to Typsy</h1>
-      <p className="text-gray-400 mb-10">
-        Step {step} of 3 — {stepTitle}
-      </p>
+    <div className="max-w-3xl mx-auto px-4 py-10">
+      {/* Banner */}
+      <div className="mb-8">
+        <h1 className="text-2xl text-fg_h">welcome to <span className="text-yellow-400">typsy</span></h1>
+        <p className="text-fg3 text-sm mt-1">
+          step <span className="text-fg_h">{step}</span> of 3 — {stepTitle}
+        </p>
+      </div>
 
       {step === 1 && (
         <div className="space-y-4">
-          <p className="text-sm text-gray-400 mb-4">
-            We&apos;ll mark this as your daily driver — every key stays unlocked
-            and there&apos;s no progressive ramp-up. Use ← → to navigate, Enter
-            to confirm.
+          <p className="text-fg3 text-sm">
+            We'll mark this as your daily driver — every key stays unlocked
+            and there's no progressive ramp-up. Use{' '}
+            <kbd className="kbd">←</kbd>/<kbd className="kbd">→</kbd> or{' '}
+            <kbd className="kbd">h</kbd>/<kbd className="kbd">l</kbd> to browse,{' '}
+            <kbd className="kbd">Enter</kbd> to confirm.
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {layouts.map((layout) => (
               <LayoutCard
                 key={layout.id}
@@ -264,7 +270,7 @@ export default function OnboardingPage() {
             type="button"
             disabled={dailyDriverId === null}
             onClick={() => setStep(2)}
-            className="mt-6 px-6 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg text-crust font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+            className="btn btn-primary mt-2"
           >
             Next →
           </button>
@@ -276,21 +282,21 @@ export default function OnboardingPage() {
           <button
             type="button"
             onClick={() => setStep(1)}
-            className="mb-2 text-sm text-gray-400 hover:text-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded"
+            className="btn btn-ghost"
           >
             ← Back
           </button>
-          <p className="text-sm text-gray-400 mb-4">
-            Pick a layout you&apos;d like to learn — it&apos;ll get progressive
-            unlocks as you practice. Skip if you just want to keep using your
-            daily driver. Use ← → to navigate, Enter to confirm.
+          <p className="text-fg3 text-sm">
+            Pick a layout you'd like to learn — it'll get progressive unlocks
+            as you practice. Skip if you just want to keep using your daily
+            driver. Use <kbd className="kbd">←</kbd>/<kbd className="kbd">→</kbd>{' '}
+            to browse, <kbd className="kbd">Enter</kbd> to confirm,{' '}
+            <kbd className="kbd">s</kbd> to skip.
           </p>
           {learnOptions.length === 0 ? (
-            <p className="text-sm text-gray-400">
-              No other layouts are available — skip this step.
-            </p>
+            <p className="text-fg3 text-sm">No other layouts available — skip this step.</p>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {learnOptions.map((layout) => (
                 <LayoutCard
                   key={layout.id}
@@ -301,12 +307,12 @@ export default function OnboardingPage() {
               ))}
             </div>
           )}
-          <div className="mt-6 flex flex-wrap gap-3">
+          <div className="mt-2 flex flex-wrap gap-2">
             <button
               type="button"
               disabled={learnLayoutId === null}
               onClick={() => setStep(3)}
-              className="px-6 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg text-crust font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+              className="btn btn-primary"
             >
               Next →
             </button>
@@ -316,7 +322,7 @@ export default function OnboardingPage() {
                 setLearnLayoutId(null);
                 setStep(3);
               }}
-              className="px-6 py-2 rounded-lg border border-gray-700 text-gray-300 hover:border-gray-500 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+              className="btn"
             >
               Skip — just my daily driver
             </button>
@@ -325,15 +331,15 @@ export default function OnboardingPage() {
       )}
 
       {step === 3 && fingeringDisplayLayout && (
-        <div>
+        <div className="space-y-4">
           <button
             type="button"
             onClick={() => setStep(2)}
-            className="mb-6 text-sm text-gray-400 hover:text-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded"
+            className="btn btn-ghost"
           >
             ← Back
           </button>
-          <p className="text-sm text-gray-400 mb-4">
+          <p className="text-fg3 text-sm">
             Fingerings are layout-independent — confirm them once on your
             daily driver and they apply everywhere. Defaults are standard
             touch-typing columns; tweak only if your hands disagree.

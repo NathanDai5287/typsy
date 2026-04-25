@@ -20,6 +20,8 @@ import {
 } from '@typsy/shared';
 import type { KeyPosition, NgramStat, FingerLabel } from '@typsy/shared';
 import KeyboardVisual from '../components/KeyboardVisual.tsx';
+import { useRegisterPageKeymap } from '../lib/keymapContext.tsx';
+import type { Keybinding } from '../lib/keymap.ts';
 
 type Mode = 'drill' | 'flow';
 type CharState = 'pending' | 'correct' | 'wrong';
@@ -58,20 +60,32 @@ function tokenize(charData: readonly CharData[]): TypingToken[] {
 }
 
 function renderChar(cd: CharData, i: number, cursor: number): JSX.Element {
-  const cls = [
-    i === cursor ? 'border-b-2 border-blue-400' : '',
-    cd.state === 'correct' ? 'text-green-400' : '',
-    cd.state === 'wrong' ? 'text-red-500' : '',
-    cd.state === 'pending' ? 'text-gray-500' : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
-  // For spaces: render literal space so the line can break here. The
-  // cursor underline still appears under the (monospace-width) space.
-  // The `data-cursor` attribute lets the scroll effect locate the cursor
-  // glyph in the DOM without threading a per-char ref through every span.
+  const isCursor = i === cursor;
+  // Terminal-style colors:
+  //   pending  : dim foreground (muted)
+  //   correct  : bright foreground
+  //   wrong    : red underline (kept visible even at the cursor)
+  //   cursor   : reverse-video block, tinted red when sitting on a
+  //              wrong char so the typo doesn't get masked
+  const isWrong = cd.state === 'wrong';
+  let className: string;
+  if (isCursor) {
+    className = isWrong
+      ? 'bg-red-400 text-bg_h'
+      : 'bg-yellow-400 text-bg_h';
+  } else if (cd.state === 'correct') {
+    className = 'text-fg_h';
+  } else if (isWrong) {
+    className = 'text-red-400 underline decoration-red-400';
+  } else {
+    className = 'text-fg4';
+  }
   return (
-    <span key={i} className={cls} data-cursor={i === cursor ? 'true' : undefined}>
+    <span
+      key={i}
+      className={className}
+      data-cursor={isCursor ? 'true' : undefined}
+    >
       {cd.char === ' ' ? ' ' : cd.char}
     </span>
   );
@@ -88,10 +102,6 @@ function buildSentence(
   }
   const userIndex = indexNgramStats(ngramRows);
   if (mode === 'drill') {
-    // Each appended chunk needs to comfortably outrun the visible window
-    // (~3 lines × ~50 chars/line) so the user is never "caught up to the
-    // generator" — `appendNextChunk` fires eagerly anyway, this just
-    // keeps the prefetch budget a couple lines ahead.
     return generateDrillSequence({
       allowed: unlocked,
       userIndex,
@@ -105,7 +115,7 @@ function buildSentence(
   });
 }
 
-export default function PracticePage() {
+export default function PracticePage(): JSX.Element {
   const queryClient = useQueryClient();
 
   const { data: userData } = useQuery({ queryKey: ['user'], queryFn: fetchUser });
@@ -130,12 +140,6 @@ export default function PracticePage() {
 
   const isMainLayout = activeProgress?.is_main_layout === 1;
 
-  /**
-   * Effective unlocked set: when the layout is marked main (the user's daily
-   * driver), every alpha key is treated as unlocked and the progressive-
-   * unlock logic is skipped. Otherwise we read `unlocked_keys_json` as set
-   * during onboarding / earlier unlocks.
-   */
   const unlockedSet = useMemo<Set<string>>(() => {
     if (!activeProgress) return new Set();
     if (isMainLayout) {
@@ -157,7 +161,6 @@ export default function PracticePage() {
     }
   }, [userData?.user.fingering_map_json]);
 
-  /** Per-char muscle-memory hit count (drives keyboard fade). */
   const charHits = useMemo<Map<string, number>>(() => {
     const map = new Map<string, number>();
     for (const row of ngramRows ?? []) {
@@ -172,7 +175,6 @@ export default function PracticePage() {
   const [mode, setMode] = useState<Mode>(initialMode);
   useEffect(() => {
     setMode(initialMode);
-    // Re-syncs when server-side current_mode changes (e.g. multi-tab edit).
   }, [initialMode]);
 
   const updateProgress = useMutation({
@@ -180,7 +182,7 @@ export default function PracticePage() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['user'] }),
   });
 
-  function changeMode(next: Mode) {
+  const changeMode = useCallback((next: Mode) => {
     if (next === mode) return;
     setMode(next);
     if (activeProgress) {
@@ -189,13 +191,9 @@ export default function PracticePage() {
         current_mode: next,
       });
     }
-  }
+  }, [mode, activeProgress, updateProgress]);
 
   // ─── Session state ───────────────────────────────────────────────────────
-  // Practice is one indefinite stream — there is no "complete" or "paused"
-  // state. The user types until they press Esc, which flushes data, posts a
-  // session row (flow only), and resets back to a fresh stream. `lastSummary`
-  // is the transient post-Esc toast.
   const [sentence, setSentence] = useState('');
   const [charData, setCharData] = useState<CharData[]>([]);
   const [cursor, setCursor] = useState(0);
@@ -225,12 +223,6 @@ export default function PracticePage() {
   sentenceRef.current = sentence;
 
   // ─── Monkeytype-style scrolling window ───────────────────────────────────
-  // The visible typing area is fixed at 3 line-heights tall. As the user
-  // types past line 0, we translate the inner text up so the cursor stays
-  // on visible line 1 (middle of 3) — completed lines scroll off the top
-  // and upcoming lines stream in at the bottom from `appendNextChunk`.
-  // `streamKey` is bumped on every reset so the inner div remounts and the
-  // transform snaps to 0 without animating from the previous offset.
   const innerRef = useRef<HTMLDivElement>(null);
   const [scrollY, setScrollY] = useState(0);
   const [streamKey, setStreamKey] = useState(0);
@@ -238,12 +230,8 @@ export default function PracticePage() {
   // ─── Reset session ───────────────────────────────────────────────────────
   const resetSession = useCallback(() => {
     if (!activeProgress || unlockedSet.size === 0 || (ngramRows == null)) {
-      // Wait for data; the load effect will retry.
       return;
     }
-    // Pre-fill the buffer with two chunks so the very first paint already
-    // shows a multi-line preview ahead of the cursor. The handler's eager
-    // appendNextChunk keeps it topped up after that.
     const s =
       buildSentence(mode, unlockedSet, ngramRows) +
       ' ' +
@@ -256,16 +244,10 @@ export default function PracticePage() {
     setLiveWpm(0);
     setLiveAccuracy(100);
     lastKeypressTimeRef.current = null;
-    // Snap the scrolling window back to the top of the new buffer.
-    // Bumping `streamKey` remounts the inner element so the transform
-    // resets without an awkward "sweep down" animation from the
-    // previous session's offset.
     setScrollY(0);
     setStreamKey((k) => k + 1);
 
     ngramTrackerRef.current?.stop().catch(console.error);
-    // Drill is practice-only: no n-gram tracking, no session row, no unlocks.
-    // Skipping the tracker here makes `recordChar` calls a no-op via `?.`.
     if (mode === 'flow') {
       const tracker = new NgramTracker(1, activeProgress.layout_id);
       tracker.start();
@@ -275,20 +257,17 @@ export default function PracticePage() {
     }
   }, [activeProgress?.layout_id, mode, unlockedSet, ngramRows]);
 
-  // Build the first sentence as soon as we have the data.
   useEffect(() => {
     if (!sentence && activeProgress && unlockedSet.size > 0 && ngramRows) {
       resetSession();
     }
   }, [activeProgress, unlockedSet.size, ngramRows, sentence, resetSession]);
 
-  // Regenerate when mode changes (resetSession identity already includes mode).
   useEffect(() => {
     if (sentence) resetSession();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
-  // Cleanup tracker on unmount
   useEffect(() => {
     return () => {
       ngramTrackerRef.current?.stop().catch(console.error);
@@ -296,17 +275,6 @@ export default function PracticePage() {
   }, []);
 
   // ─── Track cursor's line position and scroll the inner content ───────────
-  /**
-   * After every cursor or buffer change, find the cursor span in the DOM,
-   * compute its natural line index inside the inner content, and translate
-   * the inner element so the cursor sits on visible line 1 (middle of the
-   * 3-line window). Result: completed lines scroll smoothly off the top
-   * while upcoming lines stream in below — Monkeytype-style.
-   *
-   * `getBoundingClientRect` is robust to the parent's existing transform
-   * (the cursor and its parent are translated by the same amount, so the
-   * delta is the natural offset).
-   */
   useLayoutEffect(() => {
     const innerEl = innerRef.current;
     if (!innerEl) return;
@@ -317,9 +285,6 @@ export default function PracticePage() {
     const cursorRect = cursorEl.getBoundingClientRect();
     const cursorTop = cursorRect.top - innerRect.top;
 
-    // Resolve line-height in px. `getComputedStyle.lineHeight` returns
-    // `'normal'` if the author left it unset — fall back to 1.5 × font-size
-    // in that case so we still get a sensible scroll step.
     const lhStr = getComputedStyle(innerEl).lineHeight;
     let lineHeight = parseFloat(lhStr);
     if (!Number.isFinite(lineHeight) || lineHeight <= 0) {
@@ -328,22 +293,11 @@ export default function PracticePage() {
     if (!Number.isFinite(lineHeight) || lineHeight <= 0) return;
 
     const cursorLine = Math.round(cursorTop / lineHeight);
-    // Keep the cursor on visible line 1 of 3 once past line 0. Lines 0
-    // doesn't scroll; from line 1 onwards we scroll one line at a time so
-    // the cursor word always has one finished line above it and one
-    // upcoming line below it.
     const desiredScrollLine = Math.max(0, cursorLine - 1);
     const desired = desiredScrollLine * lineHeight;
     setScrollY((prev) => (Math.abs(prev - desired) < 0.5 ? prev : desired));
   }, [cursor, charData.length]);
 
-  // ─── Append more content when the cursor runs out ────────────────────────
-  /**
-   * Practice is unlimited — when the cursor reaches the end of the visible
-   * sentence we splice another generated chunk on so typing continues
-   * without an explicit "round complete" step. The chunk is prefixed with
-   * a single space so it cleanly joins onto whatever the user just typed.
-   */
   const appendNextChunk = useCallback(() => {
     if (!ngramRows || unlockedSet.size === 0) return;
     const more = ' ' + buildSentence(mode, unlockedSet, ngramRows);
@@ -352,14 +306,6 @@ export default function PracticePage() {
   }, [mode, unlockedSet, ngramRows]);
 
   // ─── End session (flush + persist + reset) ───────────────────────────────
-  /**
-   * Triggered by Esc (or the End button). Snapshots the current stats,
-   * flushes the ngram tracker, persists a session row + runs the unlock
-   * check (flow only — drill is practice-only), shows a transient summary
-   * toast, and resets the page back to a fresh stream so the user can
-   * keep typing immediately. Sessions don't naturally complete; this is
-   * the only path to commit data.
-   */
   const endSession = useCallback(async () => {
     const finalCursor = cursorRef.current;
     const finalKeystrokes = totalKeystrokesRef.current;
@@ -367,16 +313,11 @@ export default function PracticePage() {
     const localMode = mode;
     const tracker = ngramTrackerRef.current;
 
-    // Nothing to commit if the user hasn't actually typed anything yet —
-    // just regenerate the stream so Esc still feels like "give me a fresh
-    // start".
     if (st === null || finalCursor === 0) {
       resetSession();
       return;
     }
 
-    // Use the last keypress time (not the Esc time) so trailing idle
-    // time between the last char and Esc doesn't artificially lower wpm.
     const lastKey = lastKeypressTimeRef.current;
     const now = Date.now();
     const endedAt = lastKey ?? now;
@@ -385,11 +326,6 @@ export default function PracticePage() {
     const accuracy = finalKeystrokes > 0 ? finalCursor / finalKeystrokes : 1;
     const errors = finalKeystrokes - finalCursor;
 
-    // Capture the trailing partial word and kick off the flush. We hold
-    // onto the promise so the unlock check below can wait for the server
-    // to see the latest deltas. We null the ref *before* resetSession so
-    // its own (fire-and-forget) stop() doesn't double-flush the tracker
-    // we're already managing.
     tracker?.finalizeWord();
     const flushPromise = tracker?.stop() ?? Promise.resolve();
     ngramTrackerRef.current = null;
@@ -401,7 +337,6 @@ export default function PracticePage() {
       mode: localMode,
     });
 
-    // Drill is practice-only — no session row, no unlock check.
     if (localMode !== 'flow' || !activeProgress) return;
 
     try {
@@ -417,12 +352,9 @@ export default function PracticePage() {
         accuracy: Math.round(accuracy * 1000) / 1000,
         chars_typed: finalCursor,
         errors,
-        cumulative_chars_at_session_end: 0, // server computes this
+        cumulative_chars_at_session_end: 0,
       });
 
-      // Progressive unlock check is only relevant for non-main layouts —
-      // when the user has marked a layout as their daily driver, every
-      // key is already unlocked.
       if (!isMainLayout) {
         const fresh = await queryClient.fetchQuery<NgramStat[]>({
           queryKey: ['ngramStats', activeProgress.layout_id],
@@ -439,21 +371,15 @@ export default function PracticePage() {
             layout_id: activeProgress.layout_id,
             unlocked_keys_json: JSON.stringify(nextUnlocked),
           });
-          // Fold the unlock notice into whichever toast is currently
-          // showing. If the toast has already auto-cleared we drop it
-          // rather than re-popping a surprise notification.
           setLastSummary((prev) => (prev ? { ...prev, unlocked: next } : prev));
           void queryClient.invalidateQueries({ queryKey: ['user'] });
         }
       } else {
-        // Still refresh ngram stats so the dashboard / next-sentence
-        // generation see fresh data.
         void queryClient.invalidateQueries({
           queryKey: ['ngramStats', activeProgress.layout_id],
         });
       }
 
-      // Invalidate session list for the dashboard.
       void queryClient.invalidateQueries({
         queryKey: ['sessions', activeProgress.layout_id],
       });
@@ -462,37 +388,65 @@ export default function PracticePage() {
     }
   }, [activeProgress, isMainLayout, mode, queryClient, unlockedSet, positions, resetSession]);
 
-  // Auto-clear the post-Esc toast after a few seconds. We pick a window
-  // long enough to comfortably cover the session POST + unlock fetch round
-  // trip, so an unlock notice can still land on a still-visible toast.
   useEffect(() => {
     if (lastSummary === null) return;
     const id = setTimeout(() => setLastSummary(null), 6000);
     return () => clearTimeout(id);
   }, [lastSummary]);
 
-  // ─── Keydown handler ─────────────────────────────────────────────────────
+  // ─── Page-level keymap (Esc, Tab, \) ─────────────────────────────────────
+  // These are non-typing controls that don't conflict with the typing
+  // handler below (Tab, Escape, Backslash all return null from the
+  // CODE_TO_POSITION map). Bound through the global keymap registry so
+  // they show up in the help overlay.
+  const pageBindings = useMemo<Keybinding[]>(
+    () => [
+      {
+        id: 'practice.end',
+        code: 'Escape',
+        description: 'End session (saves stats in flow mode)',
+        handler: () => void endSession(),
+        allowInInput: true,
+      },
+      {
+        id: 'practice.toggle-mode',
+        code: 'Tab',
+        description: 'Toggle Flow ↔ Drill',
+        handler: () => changeMode(mode === 'flow' ? 'drill' : 'flow'),
+      },
+      {
+        id: 'practice.toggle-keyboard',
+        code: 'Backslash',
+        description: 'Show / hide on-screen keyboard',
+        handler: () => setShowKeyboard((v) => !v),
+      },
+    ],
+    [endSession, changeMode, mode],
+  );
+  useRegisterPageKeymap('Practice', pageBindings);
+
+  // ─── Typing handler ──────────────────────────────────────────────────────
+  // Captures alpha-block keypresses and routes them through translateKeypress.
+  // ANY modifier (Shift / Ctrl / Alt / Meta) → return early so global
+  // shortcuts like `Shift+P` and `?` (Shift+Slash) flow through to the
+  // global keymap without being eaten.
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      // Skip when an input/textarea/select has focus.
       const tag = (document.activeElement as HTMLElement | null)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-
-      // Esc ends the current session: flush data, post stats (flow only),
-      // and reset the stream. There is no pause / no completable level.
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        void endSession();
-        return;
-      }
-
-      // Ignore plain modifiers and tab.
-      if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab'].includes(e.key)) return;
+      // Any modifier? Skip — those keys are global navigation / help etc.
+      if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+      // Plain modifiers we still want to ignore on keydown.
+      if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock'].includes(e.key)) return;
 
       const logicalChar = translateKeypress(e, positionMap);
       if (logicalChar === null) return;
 
       e.preventDefault();
+      // Stop subsequent listeners on the document (including the bubble
+      // phase) from re-processing the same physical key. Without this,
+      // typing a `g` would also arm the global `g` nav leader.
+      e.stopImmediatePropagation();
 
       const now = Date.now();
       const timeSinceLastMs = lastKeypressTimeRef.current
@@ -532,107 +486,78 @@ export default function PracticePage() {
         setLiveWpm(Math.round(wpm));
         setLiveAccuracy(Math.round(accuracy * 100));
 
-        // Eagerly prefetch more content well before the cursor reaches the
-        // end of the buffer, so the user always sees several lines of
-        // upcoming text below the cursor (Monkeytype-style). Threshold is
-        // generous — bigger than one chunk worth — so even a momentary
-        // late append still keeps the visible window full.
         const remaining = sentenceRef.current.length - newCursor;
         if (remaining < 200) {
           appendNextChunk();
         }
       }
     },
-    [positionMap, endSession, appendNextChunk],
+    [positionMap, appendNextChunk],
   );
 
+  // Capture-phase listener so we run before the keymap context's
+  // bubble-phase listeners pick up the keypress. preventDefault here also
+  // avoids the browser's default scroll on Space.
   useEffect(() => {
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => document.removeEventListener('keydown', handleKeyDown, true);
   }, [handleKeyDown]);
 
   // ─── Render ──────────────────────────────────────────────────────────────
   if (!activeLayout) {
     return (
-      <div className="flex h-[80vh] items-center justify-center text-gray-400">
-        Loading layout…
+      <div className="flex h-[80vh] items-center justify-center text-fg3">
+        loading layout…
       </div>
     );
   }
 
-  // What key is expected next? (skip if it's a space — no on-screen highlight needed.)
   const nextExpected = sentence[cursor];
   const nextChar = nextExpected && nextExpected !== ' ' ? nextExpected : null;
+  const totalAlpha = positions.filter((p) => /^[a-z]$/.test(p.char)).length;
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[80vh] px-6 py-10 select-none">
-      {/* Top bar */}
-      <div className="w-full max-w-2xl flex justify-between items-center mb-6 text-sm">
-        <div className="flex items-center gap-3">
-          <span className="text-gray-500">{activeLayout.name}</span>
-          <span className="text-gray-700">·</span>
+    <div className="flex flex-col items-center px-4 py-6 select-none">
+      {/* Top bar: layout · mode · stats */}
+      <div className="w-full max-w-3xl flex justify-between items-center mb-4 text-xs font-mono">
+        <div className="flex items-center gap-2 text-fg3">
+          <span className="text-fg_h">{activeLayout.name}</span>
+          <span className="text-fg4">·</span>
+          <ModeToggle mode={mode} onChange={changeMode} />
+          <span className="text-fg4">·</span>
           {isMainLayout ? (
-            <span className="text-gray-500">Daily driver</span>
+            <span className="text-fg3">daily driver</span>
           ) : (
-            <span className="text-gray-500">
-              {unlockedSet.size}/{positions.filter((p) => /^[a-z]$/.test(p.char)).length} keys unlocked
+            <span className="text-fg3">
+              {unlockedSet.size}/{totalAlpha} unlocked
             </span>
           )}
         </div>
-        <div className="flex gap-6">
+        <div className="flex gap-5">
           <Stat label="WPM" value={liveWpm} />
           <Stat label="ACC" value={`${liveAccuracy}%`} />
         </div>
       </div>
 
-      {/* Mode toggle */}
-      <div
-        role="tablist"
-        aria-label="Practice mode"
-        className="flex gap-1 mb-4 p-1 bg-gray-900 rounded-full"
-      >
-        {(['flow', 'drill'] as const).map((m) => (
-          <button
-            key={m}
-            role="tab"
-            type="button"
-            aria-selected={mode === m}
-            onClick={() => changeMode(m)}
-            className={[
-              'px-4 py-1 rounded-full text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400',
-              mode === m
-                ? 'bg-blue-600 text-crust font-medium'
-                : 'text-gray-400 hover:text-gray-200',
-            ].join(' ')}
-          >
-            {m === 'flow' ? 'Flow' : 'Drill'}
-          </button>
-        ))}
-      </div>
-
-      {/* Transient end-of-session toast (auto-clears after 6s). Shown
-          after Esc or the End button; folds in an unlock notice if one
-          fires before the toast disappears. */}
+      {/* End-of-session toast */}
       {lastSummary && (
         <div
           role="status"
           aria-live="polite"
-          className="mb-4 px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm flex items-center gap-3 text-gray-300"
+          className="mb-3 panel px-3 py-1 text-xs font-mono flex items-center gap-2"
         >
-          <span className="text-gray-400">
-            {lastSummary.mode === 'flow' ? 'Session saved' : 'Drill ended'}
+          <span className="text-fg4">
+            {lastSummary.mode === 'flow' ? 'session saved' : 'drill ended'}
           </span>
-          <span className="text-gray-700">·</span>
-          <span className="text-blue-300 font-mono tabular-nums">{lastSummary.wpm} WPM</span>
-          <span className="text-gray-700">·</span>
-          <span className="text-yellow-300 font-mono tabular-nums">
-            {lastSummary.accuracy}% acc
-          </span>
+          <span className="text-fg4">·</span>
+          <span className="text-yellow-400 tabular-nums">{lastSummary.wpm} WPM</span>
+          <span className="text-fg4">·</span>
+          <span className="text-blue-400 tabular-nums">{lastSummary.accuracy}% acc</span>
           {lastSummary.unlocked && (
             <>
-              <span className="text-gray-700">·</span>
-              <span className="text-green-300">
-                Unlocked <span className="font-mono font-bold">{lastSummary.unlocked}</span>
+              <span className="text-fg4">·</span>
+              <span className="text-green-400">
+                unlocked <span className="font-bold">{lastSummary.unlocked}</span>
               </span>
             </>
           )}
@@ -640,51 +565,34 @@ export default function PracticePage() {
       )}
 
       {/* Typing area — fixed-height 3-line window that scrolls
-          Monkeytype-style. The outer div sets the font size + line-height
-          so its child line-box height matches the explicit calc below,
-          and `p-8` adds the 4rem of padding (2rem top + 2rem bottom) the
-          calc accounts for. The inner div is translated up as the cursor
-          advances so completed lines scroll off the top while upcoming
-          lines stream in at the bottom from `appendNextChunk`.
-
-          Height math: text-2xl = 1.5rem font-size, leading-relaxed =
-          1.625 → per-line = 2.4375rem → 3 lines = 7.3125rem, plus 4rem
-          for p-8's vertical padding = 11.3125rem total. Using calc keeps
-          the source readable; we deliberately avoid the `lh` unit since
-          it isn't supported by older Safari/Firefox builds Vite targets. */}
+          monkeytype-style. Sharp single-pixel border, no rounded corners. */}
       <div
-        className="w-full max-w-2xl bg-gray-900 rounded-2xl px-8 py-8 font-mono text-2xl leading-relaxed overflow-hidden"
-        style={{ height: 'calc(2.4375rem * 3 + 4rem)' }}
+        className="w-full max-w-3xl panel px-6 py-6 text-2xl leading-relaxed overflow-hidden"
+        style={{ height: 'calc(2.4375rem * 3 + 3rem)' }}
         role="region"
         aria-label="Typing practice area"
       >
         <div
           ref={innerRef}
           key={streamKey}
-          className="tracking-wide"
+          className="font-mono"
           style={{
             transform: `translateY(-${scrollY}px)`,
-            transition: 'transform 120ms ease-out',
+            transition: 'transform 80ms linear',
             willChange: 'transform',
           }}
           aria-live="polite"
           aria-label="Text to type"
         >
           {charData.length === 0 ? (
-            <span className="text-gray-500">Loading practice text…</span>
+            <span className="text-fg4">loading…</span>
           ) : (
-            // Group chars into word / whitespace tokens. Word tokens are
-            // rendered as inline-block + whitespace-nowrap so a word never
-            // wraps mid-glyph. Spaces stay as plain text inside their own
-            // span so the line can break between words.
             tokenize(charData).map((tok, ti) =>
               tok.kind === 'word' ? (
                 <span key={ti} className="inline-block whitespace-nowrap">
                   {tok.indices.map((i) => renderChar(charData[i], i, cursor))}
                 </span>
               ) : (
-                // A whitespace token: render each space char as a plain inline span.
-                // The space content is a literal space so the line can break here.
                 tok.indices.map((i) => renderChar(charData[i], i, cursor))
               ),
             )
@@ -694,7 +602,7 @@ export default function PracticePage() {
 
       {/* On-screen keyboard */}
       {showKeyboard && (
-        <div className="mt-8">
+        <div className="mt-6">
           <KeyboardVisual
             positions={positions}
             unlocked={unlockedSet}
@@ -705,38 +613,46 @@ export default function PracticePage() {
         </div>
       )}
 
-      {/* Controls */}
-      <div className="flex gap-3 mt-6">
-        <button
-          type="button"
-          onClick={() => void endSession()}
-          className="px-4 py-2 text-sm text-gray-400 border border-gray-700 rounded-lg hover:border-gray-500 hover:text-gray-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-        >
-          End session (Esc)
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowKeyboard((v) => !v)}
-          aria-pressed={showKeyboard}
-          className="px-4 py-2 text-sm text-gray-400 border border-gray-700 rounded-lg hover:border-gray-500 hover:text-gray-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-        >
-          {showKeyboard ? 'Hide keyboard' : 'Show keyboard'}
-        </button>
-      </div>
-
-      <p className="mt-4 text-xs text-gray-600">
-        Type freely · Press Esc to end the session
-        {mode === 'flow' ? ' and save your stats' : ''}
+      {/* Hint line */}
+      <p className="mt-6 text-xs text-fg4">
+        type freely · <kbd className="kbd">Esc</kbd> end · <kbd className="kbd">Tab</kbd> mode ·{' '}
+        <kbd className="kbd">\</kbd> keyboard · <kbd className="kbd">?</kbd> help
       </p>
     </div>
+  );
+}
+
+function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
+  return (
+    <span role="tablist" aria-label="Practice mode" className="inline-flex items-center gap-1">
+      {(['flow', 'drill'] as const).map((m) => (
+        <button
+          key={m}
+          role="tab"
+          type="button"
+          aria-selected={mode === m}
+          onClick={() => onChange(m)}
+          className={[
+            'px-2 py-0 text-xs font-mono border focus-visible:outline-none focus-visible:border-yellow-400',
+            mode === m
+              ? 'bg-yellow-400 text-bg_h border-yellow-400'
+              : 'border-bg4 text-fg2 hover:text-fg_h',
+          ].join(' ')}
+        >
+          {m}
+        </button>
+      ))}
+    </span>
   );
 }
 
 function Stat({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="text-right">
-      <div className="text-2xl font-mono font-bold text-white tabular-nums">{value}</div>
-      <div className="text-xs text-gray-500 uppercase tracking-wider">{label}</div>
+      <div className="text-xl font-mono font-bold text-fg_h tabular-nums leading-none">
+        {value}
+      </div>
+      <div className="text-[10px] text-fg4 uppercase tracking-widest mt-0.5">{label}</div>
     </div>
   );
 }
