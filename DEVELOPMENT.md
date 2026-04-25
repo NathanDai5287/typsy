@@ -5,7 +5,8 @@ Day-to-day commands for working on Typsy.
 ## Common commands
 
 ```bash
-pnpm dev                         # web (5173) + server (3001), hot reload
+pnpm dev                         # web (5173) + server (3001), hot reload (real data)
+pnpm dev:synth                   # seed synthetic data + run dev in synthetic mode
 pnpm build                       # typecheck + build everything
 pnpm test                        # run all package tests
 
@@ -15,27 +16,62 @@ pnpm --filter @typsy/shared test # shared package tests only
 pnpm --filter web test           # web tests only
 ```
 
-## Seeding synthetic data for the optimizer
+## Synthetic data (non-destructive, dev-only)
 
-`/optimize` is gated until you've typed `OPTIMIZER_MIN_CHARS` (50,000) on the
-active layout. To test it without typing that much:
+The DB holds two parallel users: `user_id=1` (your real practice data) and
+`user_id=2` (synthetic data). Which one the server reads/writes is decided
+by the `TYPSY_DATA_MODE` env var at startup:
+
+| Env | User the server acts as | Use case |
+|---|---|---|
+| _unset_ or `real` | `user_id=1` | Normal practice |
+| `synthetic` | `user_id=2` | Demo/test data from `seed:dev` |
+
+The two are completely isolated — sessions, ngram_stats, unlocked keys,
+fingering, active layout — nothing crosses between them. Switching is just
+restarting the server with a different env.
+
+### Single-command synthetic mode
+
+```bash
+pnpm dev:synth   # runs seed:dev (Colemak/100k) → starts dev server in synthetic mode
+```
+
+That's it. Dashboard/optimize/practice immediately show the synthetic data.
+Your real data is untouched.
+
+### Switching back to real data
+
+```bash
+# stop the dev server (Ctrl-C in the dev terminal), then:
+pnpm dev
+```
+
+Real `user_id=1` data is exactly as you left it.
+
+### Customizing the seed
+
+`seed:dev` writes fresh data each run (regenerative — same shape, not stacked
+rows) but ONLY for the synthetic user. Real data is never touched.
 
 ```bash
 pnpm --filter server seed:dev                  # Colemak, 100k chars (default)
-pnpm --filter server seed:dev Colemak          # explicit layout
 pnpm --filter server seed:dev Graphite         # different layout, 100k chars
 pnpm --filter server seed:dev Colemak 200000   # custom char target
 ```
 
-### Behavior
+After running this manually, follow up with `TYPSY_DATA_MODE=synthetic pnpm dev`
+to view it (or just use `pnpm dev:synth` which does both in one go and uses
+the defaults).
 
-- **Per-layout.** Only touches the target layout's data; other layouts are
-  unaffected.
-- **Regenerative.** Each run wipes the target layout's existing sessions and
-  ngram_stats and writes fresh synthetic data. Re-run any time — you always
-  end up with the same shape, not stacked rows.
-- **Active layout switches** to whatever you just seeded, so `/practice`,
-  `/dashboard`, and `/optimize` immediately show it.
+### What the synthetic data looks like
+
+- **Per-layout.** Only the target layout's synthetic-user rows are touched
+  on each seed run; other layouts on the synthetic user, and all real-user
+  layouts, are unaffected.
+- **Active layout switches** for the synthetic user to whatever you just
+  seeded, so `/practice`, `/dashboard`, and `/optimize` immediately show it
+  in synthetic mode. The real user's active layout is untouched.
 - **Synthetic weak bigrams** (`sc`, `rl`, `br`, `pt`, `gh`) get artificially
   elevated miss rates (22–35 %) so the optimizer's per-user weighting has
   visible signal in its suggestions.
@@ -47,27 +83,28 @@ better-sqlite3 connection may cache and not see the new ngram rows. If the
 dashboard / optimize page looks stale after a seed, restart the dev server:
 
 ```bash
-# in the terminal running `pnpm dev`
+# in the terminal running pnpm dev / pnpm dev:synth
 Ctrl-C
-pnpm dev
+pnpm dev:synth   # or pnpm dev
 ```
 
 ## Resetting the database
 
-The seed script wipes data **per layout**. To wipe everything (including the
-single user record, all layouts other than seeded ones, all sessions, all
-stats), nuke the SQLite file:
+`seed:dev` only wipes the synthetic user's data for one layout. To wipe
+EVERYTHING (real + synthetic, all layouts, all sessions, all stats), nuke
+the SQLite file:
 
 ```bash
 rm apps/server/data/typsy.db*
 ```
 
 The next `pnpm dev` (or `seed:dev`) re-creates the DB from scratch via
-migrations + the layout seeder (QWERTY, Colemak, Graphite).
+migrations + the layout seeder (QWERTY, Colemak, Graphite) and re-creates
+both users.
 
-> ⚠️ This deletes any real practice sessions you've recorded. If you want to
-> wipe just one layout, run `seed:dev <layout>` — that only wipes that
-> layout's data.
+> ⚠️ This deletes your real practice sessions too. If you only want to
+> regenerate synthetic data, just re-run `pnpm --filter server seed:dev` —
+> that only touches the synthetic user, never the real one.
 
 ## Where things live
 

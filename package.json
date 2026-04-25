@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "concurrently \"pnpm --filter server dev\" \"pnpm --filter web dev\"",
+    "dev:synth": "pnpm --filter server seed:dev && TYPSY_DATA_MODE=synthetic concurrently \"pnpm --filter server dev\" \"pnpm --filter web dev\"",
     "build": "pnpm -r build",
     "test": "pnpm -r test"
   },

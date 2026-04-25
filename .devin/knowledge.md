@@ -26,9 +26,10 @@ This file is the source of truth for project structure and conventions. **Do not
 - **Entry point:** <ref_file file="/Users/natha/Programming/typsy/apps/server/src/index.ts" /> — boots Express on port 3001, mounts four routers, calls `getDb()` to run migrations + seed.
 - `src/db/client.ts` — `getDb()` opens `apps/server/data/typsy.db`, applies any new `*.sql` files in `migrations/` (in lexical order, tracked via `_migrations` table), then runs `seedData()`.
 - `src/db/migrations/*.sql` — schema migrations. `001_initial.sql` defines `users`, `layouts`, `user_layout_progress`, `sessions`, `ngram_stats`. `002_main_layout.sql` adds `is_main_layout` flag.
-- `src/db/seed.ts` — inserts the three built-in layouts and the single user (`id=1`).
-- `src/routes/{user,layouts,sessions,ngrams}.ts` — Express routers under `/api/user`, `/api/layouts`, `/api/sessions`, `/api/ngrams`. All scoped to `user_id = 1` (no auth — single user).
-- `scripts/seed-dev-data.ts` — dev-only synthetic data generator for the optimizer gate.
+- `src/db/seed.ts` — inserts the three built-in layouts plus two users: `id=1` (real) and `id=2` (synthetic). The schema already keys every per-user table by `user_id`, so the two are fully isolated.
+- `src/db/dataMode.ts` — dev-only switch. `getCurrentUserId()` reads `process.env.TYPSY_DATA_MODE` ('synthetic' → `id=2`, else → `id=1`). Routes call this once per request and use the result everywhere they used to hardcode `user_id = 1`. The mode is set at server startup; switching means restarting the dev server with a different env. Intentionally invisible to the UI.
+- `src/routes/{user,layouts,sessions,ngrams}.ts` — Express routers under `/api/user`, `/api/layouts`, `/api/sessions`, `/api/ngrams`. All routes pull the active `user_id` from `getCurrentUserId()` (no auth — single human user, but two DB users for the real/synthetic split).
+- `scripts/seed-dev-data.ts` — dev-only synthetic data generator for the optimizer gate. **Non-destructive** — only ever wipes/writes `user_id=2` rows; real `user_id=1` data is untouched.
 - DB file: `apps/server/data/typsy.db` (gitignored). Created automatically on first server boot.
 
 ### `apps/web/` — Vite + React 18 + Tailwind (TypeScript, ESM)
@@ -88,12 +89,18 @@ pnpm --filter @typsy/shared test
 pnpm --filter web build      # tsc && vite build
 pnpm --filter server build   # tsc → apps/server/dist/
 
-# Dev seed (generates synthetic ngrams + sessions for one layout)
+# Dev seed (writes synthetic ngrams + sessions to user_id=2; never touches real data)
 pnpm --filter server seed:dev                  # Colemak, 100k chars
 pnpm --filter server seed:dev Graphite         # named layout, 100k chars
 pnpm --filter server seed:dev Colemak 200000   # custom char target
 
-# Wipe entire DB
+# Single command: seed synthetic data + run dev server in synthetic mode
+pnpm dev:synth
+
+# Run dev server in real mode (default)
+pnpm dev
+
+# Wipe entire DB (deletes BOTH real and synthetic data)
 rm apps/server/data/typsy.db*
 ```
 
@@ -213,9 +220,9 @@ There is no separate `lint` or `typecheck` command — `pnpm build` is the typec
 | Pull-merged-work helper | `scripts/devin-pull.sh` |
 
 ### Things that DO NOT exist (don't go looking)
-- **Auth.** Single user hardcoded as `user_id = 1`. There are no login routes, no JWTs, no sessions cookies.
+- **Auth.** Single human user, no login. The schema has two DB users (`id=1` real, `id=2` synthetic) for the data-mode split — `getCurrentUserId()` in `apps/server/src/db/dataMode.ts` decides which one each request reads/writes based on `TYPSY_DATA_MODE`. Treat this as one human with two parallel data tracks, NOT a multi-user system. There are no login routes, no JWTs, no session cookies.
 - **Feature flags.** None.
-- **Env vars.** Only `PORT` (server, defaults to 3001). No `.env` file is needed for local dev.
+- **Env vars.** Two: `PORT` (server, defaults to 3001) and `TYPSY_DATA_MODE` (server, `'synthetic'` or unset/`'real'`). No `.env` file is needed for local dev.
 - **Docker / containers.** Not configured.
 - **Lint / format config.** No ESLint, no Prettier. Match existing style by reading the file you're editing.
 
@@ -225,8 +232,9 @@ There is no separate `lint` or `typecheck` command — `pnpm build` is the typec
 
 - **DB schema is gitignored.** The SQLite file at `apps/server/data/typsy.db` is created on first server boot via the migration runner. If your changes look like they're not applied, `rm apps/server/data/typsy.db*` and re-run `pnpm dev` (the runner is idempotent and re-creates everything from migrations + seed).
 - **Migrations are append-only.** `_migrations` table records every applied file. **Never edit an already-applied migration** — even in dev. Add a new `NNN_*.sql` file instead.
-- **Seed script wipes per-layout data.** `pnpm --filter server seed:dev <layout>` deletes the target layout's `sessions` and `ngram_stats` rows. Other layouts and the `users` row are untouched.
-- **`tsx watch` may not see fresh DB rows.** A long-running better-sqlite3 connection caches schema. After running `seed:dev`, restart `pnpm dev` if the dashboard or `/optimize` looks stale.
+- **Seed script is non-destructive to real data.** `pnpm --filter server seed:dev <layout>` only ever wipes/writes `user_id=2` (the synthetic user). `user_id=1` (your real practice data) is never touched. To view what was seeded, restart the server in synthetic mode (`TYPSY_DATA_MODE=synthetic pnpm dev`, or just `pnpm dev:synth` which does the seed + restart in one go).
+- **`pnpm dev` vs `pnpm dev:synth`.** `dev` runs in real mode (`user_id=1`); `dev:synth` runs `seed:dev` then starts dev with `TYPSY_DATA_MODE=synthetic` (`user_id=2`). The mode is fixed at server startup — to switch, stop the server and start it with the other command. There is intentionally no UI toggle.
+- **`tsx watch` may not see fresh DB rows.** A long-running better-sqlite3 connection caches schema. After running `seed:dev`, restart `pnpm dev` / `pnpm dev:synth` if the dashboard or `/optimize` looks stale.
 - **Server uses NodeNext module resolution; web uses Bundler.** That's why server-side relative imports need `.js` extensions and web-side ones use `.ts`/`.tsx`. Don't "fix" what looks like an inconsistency — it's deliberate per `tsconfig.json` in each app.
 - **`KeyboardEvent.code` (not `key`) is the source of truth for typing.** `code` is layout-independent — `KeyF` is always the F-position key regardless of OS keyboard setting. The `translateKeypress` function in `packages/shared/src/inputMode.ts` maps `event.code` → row/col → active-layout char. **Do not switch to `event.key`** — it would break the whole "practice any layout from a QWERTY OS" premise.
 - **The Graphite layout in `packages/shared/src/layouts.ts` is a best-effort placeholder.** See the `TODO` comment there. Not yet validated against the official reference.

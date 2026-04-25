@@ -1,16 +1,19 @@
 import { Router } from 'express';
 import type { Router as ExpressRouter } from 'express';
 import { getDb } from '../db/client.js';
+import { getCurrentUserId } from '../db/dataMode.js';
 import type { SessionPayload, Session } from '@typsy/shared';
 
 const router: ExpressRouter = Router();
 
 router.post('/', (req, res) => {
   const db = getDb();
+  // Server is the source of truth for which user the session belongs to —
+  // any user_id from the body is ignored so the FE can't write across modes.
+  const userId = getCurrentUserId();
   const payload = req.body as SessionPayload;
 
   const {
-    user_id,
     layout_id,
     started_at,
     ended_at,
@@ -28,7 +31,7 @@ router.post('/', (req, res) => {
        WHERE user_id = ? AND layout_id = ?
        ORDER BY ended_at DESC LIMIT 1`,
     )
-    .get(user_id, layout_id) as { cumulative_chars_at_session_end: number } | undefined;
+    .get(userId, layout_id) as { cumulative_chars_at_session_end: number } | undefined;
 
   const cumulative_chars_at_session_end =
     (prevSession?.cumulative_chars_at_session_end ?? 0) + chars_typed;
@@ -41,7 +44,7 @@ router.post('/', (req, res) => {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
-      user_id,
+      userId,
       layout_id,
       started_at,
       ended_at,
@@ -57,10 +60,11 @@ router.post('/', (req, res) => {
   db.prepare(
     `UPDATE user_layout_progress SET last_session_at = ?
      WHERE user_id = ? AND layout_id = ?`,
-  ).run(ended_at, user_id, layout_id);
+  ).run(ended_at, userId, layout_id);
 
   const session: Session = {
     ...payload,
+    user_id: userId,
     id: result.lastInsertRowid as number,
     cumulative_chars_at_session_end,
   };
@@ -75,6 +79,7 @@ router.post('/', (req, res) => {
  */
 router.get('/', (req, res) => {
   const db = getDb();
+  const userId = getCurrentUserId();
   const layoutId = Number(req.query.layout_id);
   const limit = Math.min(Number(req.query.limit ?? 200) || 200, 1000);
 
@@ -86,11 +91,11 @@ router.get('/', (req, res) => {
   const rows = db
     .prepare(
       `SELECT * FROM sessions
-       WHERE user_id = 1 AND layout_id = ?
+       WHERE user_id = ? AND layout_id = ?
        ORDER BY ended_at DESC
        LIMIT ?`,
     )
-    .all(layoutId, limit) as Session[];
+    .all(userId, layoutId, limit) as Session[];
 
   res.json(rows);
 });
