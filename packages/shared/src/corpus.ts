@@ -1,0 +1,38 @@
+export const CORPUS: string[] = [
+  'the quick brown fox jumps over the lazy dog',
+  'pack my box with five dozen liquor jugs',
+  'how vexingly quick daft zebras jump',
+  'the five boxing wizards jump quickly',
+  'sphinx of black quartz judge my vow',
+  'two driven jocks help fax my big quiz',
+  'she sells seashells by the seashore',
+  'peter piper picked a peck of pickled peppers',
+  'how much wood would a woodchuck chuck',
+  'a stitch in time saves nine',
+  'the early bird catches the worm',
+  'all that glitters is not gold',
+  'every cloud has a silver lining',
+  'actions speak louder than words',
+  'better late than never',
+  'birds of a feather flock together',
+  'every dog has its day',
+  'fortune favors the bold',
+  'great minds think alike',
+  'if it is not broken do not fix it',
+  'knowledge is power',
+  'laughter is the best medicine',
+  'never judge a book by its cover',
+  'no pain no gain',
+  'practice makes perfect',
+  'the pen is mightier than the sword',
+  'time flies when you are having fun',
+  'where there is a will there is a way',
+  'you reap what you sow',
+  'a penny saved is a penny earned',
+  'the truth will set you free',
+  'life is what you make it',
+];
+
+export function getRandomSentence(): string {
+  return CORPUS[Math.floor(Math.random() * CORPUS.length)];
+}

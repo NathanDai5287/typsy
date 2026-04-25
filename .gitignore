@@ -1,0 +1,18 @@
+node_modules/
+dist/
+*.db
+*.db-shm
+*.db-wal
+.env
+data/
+
+# pnpm content-addressable store (created when CI/local dev sets store-dir to project)
+.pnpm-store/
+
+# OS / editor cruft
+.DS_Store
+.vscode/
+.idea/
+
+# Devin session-local config (per-machine tool permissions)
+.devin/config.local.json
