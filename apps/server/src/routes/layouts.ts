@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { Router as ExpressRouter } from 'express';
 import { getDb } from '../db/client.js';
+import { getCurrentUserId } from '../db/dataMode.js';
 import type { Layout, LayoutSummary, User, UserSettings } from '@typsy/shared';
 
 const router: ExpressRouter = Router();
@@ -93,7 +94,8 @@ router.delete('/:id', (req, res) => {
   }
 
   // Read user settings to detect "was this the active layout?"
-  const user = db.prepare('SELECT * FROM users WHERE id = 1').get() as User | undefined;
+  const userId = getCurrentUserId();
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as User | undefined;
   let settings: UserSettings = {};
   if (user) {
     try {
@@ -105,7 +107,9 @@ router.delete('/:id', (req, res) => {
   const wasActive = settings.active_layout_id === id;
 
   const tx = db.transaction(() => {
-    // Manual cascade — schema doesn't have ON DELETE CASCADE.
+    // Manual cascade — schema doesn't have ON DELETE CASCADE. Layouts are
+    // shared across users, so deleting one wipes its data for both the real
+    // and synthetic users.
     db.prepare('DELETE FROM ngram_stats WHERE layout_id = ?').run(id);
     db.prepare('DELETE FROM sessions WHERE layout_id = ?').run(id);
     db.prepare('DELETE FROM user_layout_progress WHERE layout_id = ?').run(id);
@@ -114,14 +118,15 @@ router.delete('/:id', (req, res) => {
   tx();
 
   if (wasActive) {
-    // Fall back to whatever progress row exists.
+    // Fall back to whatever progress row exists for the current-mode user.
     const fallback = db
-      .prepare('SELECT layout_id FROM user_layout_progress WHERE user_id = 1 LIMIT 1')
-      .get() as { layout_id: number } | undefined;
+      .prepare('SELECT layout_id FROM user_layout_progress WHERE user_id = ? LIMIT 1')
+      .get(userId) as { layout_id: number } | undefined;
     const newActive = fallback?.layout_id;
     const newSettings = { ...settings, active_layout_id: newActive };
-    db.prepare('UPDATE users SET settings_json = ? WHERE id = 1').run(
+    db.prepare('UPDATE users SET settings_json = ? WHERE id = ?').run(
       JSON.stringify(newSettings),
+      userId,
     );
   }
 
@@ -136,6 +141,7 @@ router.delete('/:id', (req, res) => {
  */
 router.get('/summary', (_req, res) => {
   const db = getDb();
+  const userId = getCurrentUserId();
 
   const rows = db
     .prepare(
@@ -152,12 +158,12 @@ router.get('/summary', (_req, res) => {
          (p.layout_id IS NOT NULL) AS has_progress
        FROM layouts l
        LEFT JOIN user_layout_progress p
-         ON p.layout_id = l.id AND p.user_id = 1
+         ON p.layout_id = l.id AND p.user_id = ?
        LEFT JOIN (
          SELECT layout_id,
                 SUM(chars_typed) AS total_chars,
                 COUNT(*)         AS session_count
-         FROM sessions WHERE user_id = 1
+         FROM sessions WHERE user_id = ?
          GROUP BY layout_id
        ) stats ON stats.layout_id = l.id
        LEFT JOIN (
@@ -165,15 +171,15 @@ router.get('/summary', (_req, res) => {
                 s1.wpm     AS last_wpm,
                 s1.ended_at AS last_session_at
          FROM sessions s1
-         WHERE s1.user_id = 1
+         WHERE s1.user_id = ?
          AND   s1.ended_at = (
            SELECT MAX(s2.ended_at) FROM sessions s2
-           WHERE s2.user_id = 1 AND s2.layout_id = s1.layout_id
+           WHERE s2.user_id = ? AND s2.layout_id = s1.layout_id
          )
        ) latest ON latest.layout_id = l.id
        ORDER BY l.id`,
     )
-    .all() as Array<{
+    .all(userId, userId, userId, userId) as Array<{
       layout_id: number;
       layout_name: string;
       key_positions_json: string;
@@ -187,7 +193,7 @@ router.get('/summary', (_req, res) => {
     }>;
 
   // Resolve active layout from settings.
-  const user = db.prepare('SELECT * FROM users WHERE id = 1').get() as User | undefined;
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as User | undefined;
   let activeId: number | undefined;
   if (user) {
     try {

@@ -2,13 +2,19 @@
  * Dev-only: synthesize ngram stats and sessions for ONE layout so the
  * `/optimize` 50k-char threshold opens and the dashboard has data to render.
  *
+ * Non-destructive: writes EVERYTHING under the synthetic user (id=2). Real
+ * user data (id=1) is never touched, so you can flip back to real data by
+ * starting the dev server without TYPSY_DATA_MODE=synthetic. To view what
+ * this script writes, run `pnpm dev:synth` (which sets the env var and
+ * starts the dev server).
+ *
  * Behavior
- *   - Per-layout. Other layouts are not touched.
- *   - Regenerative. Every run wipes the target layout's existing sessions +
- *     ngram_stats and writes fresh synthetic data. Re-running gives the same
- *     shape, not stacked rows.
- *   - Sets the seeded layout as the active one (settings.active_layout_id)
- *     so /practice and /optimize immediately show it.
+ *   - Per-layout. Other layouts on the synthetic user are not touched.
+ *   - Regenerative. Every run wipes the synthetic user's existing sessions +
+ *     ngram_stats for the target layout and writes fresh data. Re-running
+ *     gives the same shape, not stacked rows.
+ *   - Sets the seeded layout as the synthetic user's active layout so
+ *     /practice and /optimize immediately show it after `pnpm dev:synth`.
  *
  * Usage
  *   pnpm --filter server seed:dev                  # Colemak, 100k chars
@@ -17,6 +23,7 @@
  */
 
 import { getDb } from '../src/db/client.js';
+import { SYNTHETIC_USER_ID } from '../src/db/dataMode.js';
 import {
   ALL_WORDS,
   WORD_RAW,
@@ -137,23 +144,37 @@ function main(): void {
     bumpStats(wordStats, word, attempts, BASELINE_MISS_RATE);
   }
 
+  // Belt-and-suspenders: ensure the synthetic user row exists. seed.ts
+  // already inserts it on every server boot, but seed:dev may run against a
+  // never-booted DB.
+  db.prepare('INSERT OR IGNORE INTO users (id) VALUES (?)').run(SYNTHETIC_USER_ID);
+
   const tx = db.transaction(() => {
-    // Wipe existing data for this (user, layout)
+    // Wipe existing synthetic-user data for this layout. Real user (id=1)
+    // rows are never touched.
     const ng = db
-      .prepare('DELETE FROM ngram_stats WHERE user_id = 1 AND layout_id = ?')
-      .run(layout.id);
+      .prepare('DELETE FROM ngram_stats WHERE user_id = ? AND layout_id = ?')
+      .run(SYNTHETIC_USER_ID, layout.id);
     const ss = db
-      .prepare('DELETE FROM sessions WHERE user_id = 1 AND layout_id = ?')
-      .run(layout.id);
+      .prepare('DELETE FROM sessions WHERE user_id = ? AND layout_id = ?')
+      .run(SYNTHETIC_USER_ID, layout.id);
 
     const insertNgram = db.prepare(
       `INSERT INTO ngram_stats
          (user_id, layout_id, ngram, ngram_type, hits, misses, total_time_ms)
-       VALUES (1, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     );
     const bulkInsert = (map: Map<string, Stats>, type: string) => {
       for (const [ngram, s] of map) {
-        insertNgram.run(layout.id, ngram, type, s.hits, s.misses, s.totalTimeMs);
+        insertNgram.run(
+          SYNTHETIC_USER_ID,
+          layout.id,
+          ngram,
+          type,
+          s.hits,
+          s.misses,
+          s.totalTimeMs,
+        );
       }
     };
     bulkInsert(charStats, 'char1');
@@ -177,7 +198,7 @@ function main(): void {
       `INSERT INTO sessions
          (user_id, layout_id, started_at, ended_at, mode, wpm, accuracy,
           chars_typed, errors, cumulative_chars_at_session_end)
-       VALUES (1, ?, ?, ?, 'seed', ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, 'seed', ?, ?, ?, ?, ?)`,
     );
     const now = Date.now();
     let cumulative = 0;
@@ -189,6 +210,7 @@ function main(): void {
       const accuracy = 0.92 + (i / NUM_SESSIONS) * 0.05 + (Math.random() - 0.5) * 0.02;
       cumulative += charsPerSession;
       insertSession.run(
+        SYNTHETIC_USER_ID,
         layout.id,
         started.toISOString(),
         ended.toISOString(),
@@ -200,13 +222,13 @@ function main(): void {
       );
     }
 
-    // Make sure user_layout_progress row exists (creates one with the
-    // standard initial subset if not).
+    // Make sure user_layout_progress row exists for the synthetic user
+    // (creates one with the standard initial subset if not).
     const existing = db
       .prepare(
-        'SELECT * FROM user_layout_progress WHERE user_id = 1 AND layout_id = ?',
+        'SELECT * FROM user_layout_progress WHERE user_id = ? AND layout_id = ?',
       )
-      .get(layout.id) as UserLayoutProgress | undefined;
+      .get(SYNTHETIC_USER_ID, layout.id) as UserLayoutProgress | undefined;
 
     if (!existing) {
       const initialUnlocked = pickInitialSubset(positions);
@@ -214,17 +236,26 @@ function main(): void {
         `INSERT INTO user_layout_progress
            (user_id, layout_id, unlocked_keys_json, fingering_map_json,
             current_mode, last_session_at)
-         VALUES (1, ?, ?, '{}', 'flow', ?)`,
-      ).run(layout.id, JSON.stringify(initialUnlocked), new Date(now).toISOString());
+         VALUES (?, ?, ?, '{}', 'flow', ?)`,
+      ).run(
+        SYNTHETIC_USER_ID,
+        layout.id,
+        JSON.stringify(initialUnlocked),
+        new Date(now).toISOString(),
+      );
     } else {
       db.prepare(
         `UPDATE user_layout_progress SET last_session_at = ?
-         WHERE user_id = 1 AND layout_id = ?`,
-      ).run(new Date(now).toISOString(), layout.id);
+         WHERE user_id = ? AND layout_id = ?`,
+      ).run(new Date(now).toISOString(), SYNTHETIC_USER_ID, layout.id);
     }
 
-    // Make this the active layout so the UI lands on it.
-    const user = db.prepare('SELECT * FROM users WHERE id = 1').get() as User;
+    // Set the synthetic user's active layout — does NOT touch the real
+    // user's settings, so flipping back to real mode lands on whatever
+    // layout was last active there.
+    const user = db
+      .prepare('SELECT * FROM users WHERE id = ?')
+      .get(SYNTHETIC_USER_ID) as User;
     let settings: UserSettings = {};
     try {
       settings = JSON.parse(user.settings_json) as UserSettings;
@@ -232,15 +263,18 @@ function main(): void {
       // ignore
     }
     settings.active_layout_id = layout.id;
-    db.prepare('UPDATE users SET settings_json = ? WHERE id = 1').run(
+    db.prepare('UPDATE users SET settings_json = ? WHERE id = ?').run(
       JSON.stringify(settings),
+      SYNTHETIC_USER_ID,
     );
 
     // Print summary
-    console.log(`\n  Wiped ${ng.changes} ngram_stats and ${ss.changes} sessions for "${layoutName}"`);
+    console.log(`\n  Wiped ${ng.changes} ngram_stats and ${ss.changes} sessions for "${layoutName}" (synthetic user)`);
     console.log(`  Inserted ngrams: char1=${charStats.size}, char2=${bigramStats.size}, char3=${trigramStats.size}, word1=${wordStats.size}`);
     console.log(`  Inserted ${NUM_SESSIONS} sessions covering ${totalChars.toLocaleString()} chars (errors ${totalErrors.toLocaleString()})`);
-    console.log(`  Active layout set to "${layoutName}" (id=${layout.id})`);
+    console.log(`  Active layout set to "${layoutName}" (id=${layout.id}) for the synthetic user`);
+    console.log(`\n  All writes are scoped to user_id=${SYNTHETIC_USER_ID}. Real data (user_id=1) is untouched.`);
+    console.log(`  To view: run \`pnpm dev:synth\` (or set TYPSY_DATA_MODE=synthetic before \`pnpm dev\`).`);
     console.log(`\n  Synthetic weak bigrams (artificial elevated miss rate, useful for the optimizer):`);
     for (const w of SYNTHETIC_WEAK_BIGRAMS) {
       console.log(`    ${w.ngram}  →  ${(w.missRate * 100).toFixed(0)}% miss`);

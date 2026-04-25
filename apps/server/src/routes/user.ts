@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { Router as ExpressRouter } from 'express';
 import { getDb } from '../db/client.js';
+import { getCurrentUserId } from '../db/dataMode.js';
 import {
   pickInitialSubset,
   type User,
@@ -24,21 +25,29 @@ function readSettings(user: User): UserSettings {
   }
 }
 
-function writeSettings(db: ReturnType<typeof getDb>, settings: UserSettings): void {
-  db.prepare('UPDATE users SET settings_json = ? WHERE id = 1').run(JSON.stringify(settings));
+function writeSettings(
+  db: ReturnType<typeof getDb>,
+  userId: number,
+  settings: UserSettings,
+): void {
+  db.prepare('UPDATE users SET settings_json = ? WHERE id = ?').run(
+    JSON.stringify(settings),
+    userId,
+  );
 }
 
 router.get('/', (_req, res) => {
   const db = getDb();
-  const user = db.prepare('SELECT * FROM users WHERE id = 1').get() as User | undefined;
+  const userId = getCurrentUserId();
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as User | undefined;
   if (!user) {
     res.status(404).json({ error: 'User not found' });
     return;
   }
 
   let layout_progress = db
-    .prepare('SELECT * FROM user_layout_progress WHERE user_id = 1')
-    .all() as UserLayoutProgress[];
+    .prepare('SELECT * FROM user_layout_progress WHERE user_id = ?')
+    .all(userId) as UserLayoutProgress[];
 
   // Idempotent backfill: rows created before the auto-subset change have
   // unlocked_keys_json='[]'. Compute the proper initial subset for those rows
@@ -49,7 +58,7 @@ router.get('/', (_req, res) => {
   const update = db.prepare(
     `UPDATE user_layout_progress
      SET unlocked_keys_json = ?
-     WHERE user_id = 1 AND layout_id = ? AND unlocked_keys_json = '[]'`,
+     WHERE user_id = ? AND layout_id = ? AND unlocked_keys_json = '[]'`,
   );
   let didUpdate = false;
   for (const row of layout_progress) {
@@ -58,14 +67,14 @@ router.get('/', (_req, res) => {
       if (!layout) continue;
       const positions = JSON.parse(layout.key_positions_json) as KeyPosition[];
       const subset = pickInitialSubset(positions);
-      update.run(JSON.stringify(subset), row.layout_id);
+      update.run(JSON.stringify(subset), userId, row.layout_id);
       didUpdate = true;
     }
   }
   if (didUpdate) {
     layout_progress = db
-      .prepare('SELECT * FROM user_layout_progress WHERE user_id = 1')
-      .all() as UserLayoutProgress[];
+      .prepare('SELECT * FROM user_layout_progress WHERE user_id = ?')
+      .all(userId) as UserLayoutProgress[];
   }
 
   // Resolve active layout — defaults to the first row if not set yet.
@@ -75,7 +84,7 @@ router.get('/', (_req, res) => {
   if (activeId === undefined || !validIds.has(activeId)) {
     activeId = layout_progress[0]?.layout_id;
     if (activeId !== undefined && activeId !== settings.active_layout_id) {
-      writeSettings(db, { ...settings, active_layout_id: activeId });
+      writeSettings(db, userId, { ...settings, active_layout_id: activeId });
     }
   }
 
@@ -102,6 +111,7 @@ router.get('/', (_req, res) => {
  */
 router.post('/active-layout', (req, res) => {
   const db = getDb();
+  const userId = getCurrentUserId();
   const { layout_id } = req.body as SetActiveLayoutPayload;
 
   if (typeof layout_id !== 'number') {
@@ -110,22 +120,23 @@ router.post('/active-layout', (req, res) => {
   }
 
   const progress = db
-    .prepare('SELECT * FROM user_layout_progress WHERE user_id = 1 AND layout_id = ?')
-    .get(layout_id) as UserLayoutProgress | undefined;
+    .prepare('SELECT * FROM user_layout_progress WHERE user_id = ? AND layout_id = ?')
+    .get(userId, layout_id) as UserLayoutProgress | undefined;
   if (!progress) {
     res.status(400).json({ error: 'No progress for this layout — onboard it first' });
     return;
   }
 
-  const user = db.prepare('SELECT * FROM users WHERE id = 1').get() as User;
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as User;
   const settings = readSettings(user);
-  writeSettings(db, { ...settings, active_layout_id: layout_id });
+  writeSettings(db, userId, { ...settings, active_layout_id: layout_id });
 
   res.json({ ok: true, active_layout_id: layout_id });
 });
 
 router.post('/onboarding', (req, res) => {
   const db = getDb();
+  const userId = getCurrentUserId();
   const { layout_id, fingering_map_json } = req.body as OnboardingPayload;
 
   if (!layout_id || typeof layout_id !== 'number') {
@@ -148,23 +159,23 @@ router.post('/onboarding', (req, res) => {
   db.prepare(
     `INSERT INTO user_layout_progress
        (user_id, layout_id, fingering_map_json, unlocked_keys_json, current_mode)
-     VALUES (1, ?, ?, ?, 'flow')
+     VALUES (?, ?, ?, ?, 'flow')
      ON CONFLICT(user_id, layout_id) DO UPDATE SET
        fingering_map_json = excluded.fingering_map_json,
        unlocked_keys_json = COALESCE(user_layout_progress.unlocked_keys_json, excluded.unlocked_keys_json)`,
-  ).run(layout_id, fingering_map_json ?? '{}', JSON.stringify(initialUnlocked));
+  ).run(userId, layout_id, fingering_map_json ?? '{}', JSON.stringify(initialUnlocked));
 
   // First-time onboarding: make this layout the active one if none was set.
-  const user = db.prepare('SELECT * FROM users WHERE id = 1').get() as User;
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as User;
   const settings = readSettings(user);
   if (settings.active_layout_id === undefined) {
-    writeSettings(db, { ...settings, active_layout_id: layout_id });
+    writeSettings(db, userId, { ...settings, active_layout_id: layout_id });
   }
 
   const layout_progress = db
-    .prepare('SELECT * FROM user_layout_progress WHERE user_id = 1')
-    .all() as UserLayoutProgress[];
-  const userAfter = db.prepare('SELECT * FROM users WHERE id = 1').get() as User;
+    .prepare('SELECT * FROM user_layout_progress WHERE user_id = ?')
+    .all(userId) as UserLayoutProgress[];
+  const userAfter = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as User;
 
   res.json({ user: userAfter, layout_progress });
 });
@@ -177,6 +188,7 @@ router.post('/onboarding', (req, res) => {
  */
 router.post('/progress', (req, res) => {
   const db = getDb();
+  const userId = getCurrentUserId();
   const payload = req.body as ProgressUpdatePayload;
 
   if (!payload.layout_id || typeof payload.layout_id !== 'number') {
@@ -213,12 +225,12 @@ router.post('/progress', (req, res) => {
     return;
   }
 
-  params.push(payload.layout_id);
+  params.push(userId, payload.layout_id);
 
   const result = db
     .prepare(
       `UPDATE user_layout_progress SET ${updates.join(', ')}
-       WHERE user_id = 1 AND layout_id = ?`,
+       WHERE user_id = ? AND layout_id = ?`,
     )
     .run(...params);
 
@@ -228,8 +240,8 @@ router.post('/progress', (req, res) => {
   }
 
   const row = db
-    .prepare('SELECT * FROM user_layout_progress WHERE user_id = 1 AND layout_id = ?')
-    .get(payload.layout_id) as UserLayoutProgress;
+    .prepare('SELECT * FROM user_layout_progress WHERE user_id = ? AND layout_id = ?')
+    .get(userId, payload.layout_id) as UserLayoutProgress;
 
   res.json(row);
 });
