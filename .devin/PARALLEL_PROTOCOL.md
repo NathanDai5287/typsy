@@ -19,20 +19,18 @@ You are one of several Devin instances working on this repo simultaneously, each
 - Touch the minimum number of files needed. Do NOT do drive-by refactors, formatting passes, or import reorganizations outside your task.
 - After completing each change, post a one-sentence reminder of what just changed (e.g. "Added is_active flag to user_layout_progress and wired the toggle into LayoutsPage") and then ask the user: "Want me to commit and push this?" Do not run `git commit` or `git push` until the user says yes. When approved, do all three of the following back-to-back: (1) commit with `[<slug>]` prefix, (2) push to `origin/devin/<slug>`, (3) `scripts/devin-locks.sh release <slug>` to free your claim. The lock represents "work in flight in this worktree" — once your changes are on the remote, the lock is no longer needed. `release` is idempotent, so subsequent CI-fix pushes don't need to re-claim.
 - If tests fail on `main` (not caused by you), STOP and report — do not "fix" unrelated breakage.
-- Two workflows run automatically on every PR push: `.github/workflows/ci.yml` (`pnpm install --frozen-lockfile + pnpm build + pnpm test`) and `.github/workflows/ai-review.yml` (an AI reads the diff and posts an `APPROVE` or `REQUEST_CHANGES` review). On AI `APPROVE`, the AI workflow calls `gh pr merge --auto`, which adds the PR to GitHub's merge queue. The queue then re-runs CI on `main + previously-queued PRs + this PR` and merges only if the combined state is green. If the AI requests changes, address the concerns and push again — the AI re-reviews automatically. **Do not click Approve yourself or run `gh pr merge`** — both are automatic.
+- `.github/workflows/ci.yml` runs automatically on every PR push (`pnpm install --frozen-lockfile + pnpm build + pnpm test`) and an `enqueue` job calls `gh pr merge --auto --merge --delete-branch` so the PR auto-merges as soon as CI is green (or auto-enqueues if a merge queue is configured, which then re-runs CI on `main + previously-queued PRs + this PR`). **Do not run `gh pr merge` yourself** — it's automatic.
 
 ## Shutdown sequence (do these IN ORDER when the task is complete)
 1. Run the verification sequence from `.devin/knowledge.md`.
 2. If you learned something future instances should know (new gotcha, missing convention, wrong path), append a note to `.devin/knowledge.md` as part of your PR.
 3. Push the branch and open a regular PR (NOT draft) against `main` titled `[<slug>] <one-line summary>`. From here everything is automatic:
    - **CI** runs build + test on the head commit.
-   - **AI review** reads the diff and submits an `APPROVE` or `REQUEST_CHANGES` review.
-   - On AI `APPROVE`, the AI workflow calls `gh pr merge --auto`, which adds the PR to GitHub's merge queue.
-   - The merge queue re-runs CI on `main + previously-queued PRs + this PR`. If green there too, the PR is merged (merge commit) and the branch deleted.
-   - If CI is red on the PR head, fix and push again — the AI re-reviews on every push.
-   - If the AI requests changes, address its concerns and push; the AI re-reviews automatically.
+   - The `enqueue` job in CI calls `gh pr merge --auto --merge --delete-branch`, so GitHub merges the PR (or runs it through the merge queue if configured) as soon as required checks pass and the branch is deleted.
+   - If a merge queue is configured, it re-runs CI on `main + previously-queued PRs + this PR` and merges only if the combined state is green.
+   - If CI is red on the PR head, fix and push again.
    - If the merge queue's combined-state CI fails (semantic conflict with a sibling PR), GitHub kicks the PR out and notifies. Rebase against `main`, push, and the cycle restarts.
-   - Do NOT click Approve, run `gh pr merge`, or mark anything yourself. The human gate was your "yes" at commit/push time.
+   - Do NOT run `gh pr merge` or mark anything yourself. The human gate was your "yes" at commit/push time.
 4. Your lock should already be released (it gets released in the commit/push step above). Run `scripts/devin-locks.sh list` to confirm — if your slug is still listed (e.g. you abandoned the task without ever pushing), run `scripts/devin-locks.sh release <slug>`. Release is idempotent.
 
 ## If you crash or get interrupted

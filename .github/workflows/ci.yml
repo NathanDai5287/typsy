@@ -2,9 +2,10 @@ name: CI
 
 # Build + test on every PR push, on the merge_group event when GitHub's
 # merge queue tests `main + previously-queued PRs + this PR`, and on
-# pushes to `main` for sanity. There is no `decide` / auto-merge step
-# in this workflow — that lives in `ai-review.yml`, and the actual
-# enqueue + merge is handled by GitHub's merge queue.
+# pushes to `main` for sanity. PRs auto-merge once CI is green: the
+# `enqueue` job calls `gh pr merge --auto`, which adds the PR to the
+# merge queue (or merges directly if no queue is configured) as soon
+# as required checks pass.
 
 on:
   pull_request:
@@ -19,6 +20,7 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: write
 
 jobs:
   test:
@@ -44,3 +46,21 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+  enqueue:
+    name: enable auto-merge
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Enable auto-merge
+        # `--auto` queues the PR; GitHub merges it as soon as required
+        # checks (this workflow's `test` job) pass. Idempotent — safe to
+        # re-run on every push.
+        run: gh pr merge "$PR" --auto --merge --delete-branch
