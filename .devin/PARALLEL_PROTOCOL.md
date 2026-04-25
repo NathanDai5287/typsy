@@ -16,7 +16,7 @@ You are one of several Devin instances working on this repo simultaneously, each
 - Never run `git push --force`, `git rebase main`, or anything that rewrites shared history. Use `git merge origin/main` to pull updates in.
 - High-traffic shared files (package.json, lockfiles, shared types files, top-level config, migrations, README) are extra-dangerous — even if your claim covers them, pause and confirm with the human before editing.
 - Touch the minimum number of files needed. Do NOT do drive-by refactors, formatting passes, or import reorganizations outside your task.
-- Commit early and often with prefix `[<slug>]` in every commit message. Push to `origin/devin/<slug>` whenever a logical unit is done.
+- After completing each change, post a one-sentence reminder of what just changed (e.g. "Added is_active flag to user_layout_progress and wired the toggle into LayoutsPage") and then ask the user: "Want me to commit and push this?" Do not run `git commit` or `git push` until the user says yes. When approved, prefix every commit message with `[<slug>]` and push to `origin/devin/<slug>`.
 - If tests fail on `main` (not caused by you), STOP and report — do not "fix" unrelated breakage.
 
 ## Shutdown sequence (do these IN ORDER when the task is complete)
