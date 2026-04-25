@@ -239,9 +239,15 @@ export default function PracticePage() {
     lastKeypressTimeRef.current = null;
 
     ngramTrackerRef.current?.stop().catch(console.error);
-    const tracker = new NgramTracker(1, activeProgress.layout_id);
-    tracker.start();
-    ngramTrackerRef.current = tracker;
+    // Drill is practice-only: no n-gram tracking, no session row, no unlocks.
+    // Skipping the tracker here makes `recordChar` calls a no-op via `?.`.
+    if (mode === 'flow') {
+      const tracker = new NgramTracker(1, activeProgress.layout_id);
+      tracker.start();
+      ngramTrackerRef.current = tracker;
+    } else {
+      ngramTrackerRef.current = null;
+    }
   }, [activeProgress?.layout_id, mode, unlockedSet, ngramRows]);
 
   // Build the first sentence as soon as we have the data.
@@ -281,6 +287,8 @@ export default function PracticePage() {
       setSessionComplete(true);
 
       if (!activeProgress) return;
+      // Drill is practice-only — show stats on screen but don't persist.
+      if (mode === 'drill') return;
 
       try {
         await postSession({
@@ -471,7 +479,7 @@ export default function PracticePage() {
             className={[
               'px-4 py-1 rounded-full text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400',
               mode === m
-                ? 'bg-blue-600 text-white'
+                ? 'bg-blue-600 text-crust font-medium'
                 : 'text-gray-400 hover:text-gray-200',
             ].join(' ')}
           >
