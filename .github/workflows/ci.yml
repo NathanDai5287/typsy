@@ -1,18 +1,22 @@
 name: CI
 
-# Runs on every PR push and on pushes to main. PR runs end with a "decide"
-# job that:
-#   - on test failure, comments with the run URL and applies `status: failing`,
-#   - on test success, clears the failing label,
-#   - if the PR is labeled `devin-review`, marks it ready (if draft) and
-#     enables GitHub auto-merge (merge commit, branch deleted on merge).
+# Runs on every PR push, every PR review submission, and pushes to `main`.
+# The decision job:
+#   - on test failure (PR events), comments with the run URL and labels
+#     `status: failing`,
+#   - on test success (PR events), clears the failing label,
+#   - if the PR has any current APPROVED review, marks merge-conflict if the
+#     PR is conflicting, otherwise enables GitHub auto-merge (merge commit,
+#     branch deleted).
 #
-# Apply `devin-review` only after a human has eyeballed the diff. The label
-# is the only manual step in the merge flow.
+# Approval is the GitHub-native "Approve" review (Files → Review changes →
+# Approve). There is no custom merge-trigger label.
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_review:
+    types: [submitted]
   push:
     branches: [main]
 
@@ -30,6 +34,12 @@ permissions:
 jobs:
   test:
     name: build + test
+    # Run for: pushes to main, every PR push, and approved review submissions.
+    # Skip Comment / Changes-requested reviews — there's nothing to gate on.
+    if: |
+      github.event_name == 'push' ||
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'pull_request_review' && github.event.review.state == 'approved')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -55,9 +65,11 @@ jobs:
   decide:
     name: decide (comment / auto-merge)
     needs: test
-    # Run even when test failed so we can post a useful comment. Skip on
-    # main-branch pushes — there's no PR to comment on there.
-    if: always() && github.event_name == 'pull_request'
+    # Skip on push-to-main (no PR) and on non-approved reviews.
+    if: |
+      always() &&
+      (github.event_name == 'pull_request' ||
+       (github.event_name == 'pull_request_review' && github.event.review.state == 'approved'))
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -66,8 +78,7 @@ jobs:
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
       # Bootstrap the labels we use so a fresh repo can run this workflow
-      # without any manual setup. `--force` overwrites color/description so
-      # subsequent runs converge to the canonical metadata.
+      # without manual setup. `--force` keeps color/description in sync.
       - name: Ensure labels exist
         run: |
           gh label create "status: failing" --color B60205 \
@@ -76,38 +87,42 @@ jobs:
           gh label create "merge-conflict"  --color D93F0B \
             --description "Cannot auto-merge — needs rebase against main" \
             --repo "$GITHUB_REPOSITORY" --force >/dev/null 2>&1 || true
-          gh label create "devin-review"    --color 0E8A16 \
-            --description "Human-approved; auto-merge once CI is green" \
-            --repo "$GITHUB_REPOSITORY" --force >/dev/null 2>&1 || true
 
-      - name: On CI failure — comment, label, drop devin-review
-        if: needs.test.result == 'failure'
+      - name: On CI failure — comment + label
+        if: needs.test.result == 'failure' && github.event_name == 'pull_request'
         run: |
-          gh pr comment "$PR" --body "CI failed on \`${HEAD_SHA}\`. See [run logs](${RUN_URL}). Removing \`devin-review\` if present — re-add the label after the fix lands."
-          gh pr edit "$PR" --add-label    "status: failing" || true
-          gh pr edit "$PR" --remove-label "devin-review"    2>/dev/null || true
+          gh pr comment "$PR" --body "CI failed on \`${HEAD_SHA}\`. See [run logs](${RUN_URL})."
+          gh pr edit "$PR" --add-label "status: failing" || true
 
       - name: On CI green — clear status:failing
-        if: needs.test.result == 'success'
+        if: needs.test.result == 'success' && github.event_name == 'pull_request'
         run: |
           gh pr edit "$PR" --remove-label "status: failing" 2>/dev/null || true
 
-      - name: Auto-merge if devin-review label present
-        if: needs.test.result == 'success' && contains(github.event.pull_request.labels.*.name, 'devin-review')
+      - name: Auto-merge if approved
+        # Run when CI passed (or was skipped on a `pull_request_review` event
+        # because tests aren't re-run for approvals — the existing PR head
+        # CI status applies).
+        if: needs.test.result == 'success' || needs.test.result == 'skipped'
         run: |
+          # latestReviews collapses each reviewer to their most recent review.
+          # A superseded approval (e.g. the reviewer later requested changes)
+          # is therefore not counted.
+          APPROVED=$(gh pr view "$PR" --json latestReviews \
+            -q '[.latestReviews[] | select(.state == "APPROVED")] | length')
+          if [ "$APPROVED" = "0" ]; then
+            echo "PR #$PR has no current approving review — skipping auto-merge."
+            exit 0
+          fi
+
           MERGEABLE=$(gh pr view "$PR" --json mergeable -q .mergeable)
           if [ "$MERGEABLE" = "CONFLICTING" ]; then
-            gh pr comment "$PR" --body "Merge conflict — auto-merge skipped. Rebase \`$(gh pr view "$PR" --json headRefName -q .headRefName)\` against \`main\`, push, then re-add the \`devin-review\` label."
-            gh pr edit "$PR" --add-label    "merge-conflict" || true
-            gh pr edit "$PR" --remove-label "devin-review"   2>/dev/null || true
+            HEAD_REF=$(gh pr view "$PR" --json headRefName -q .headRefName)
+            gh pr comment "$PR" --body "Merge conflict — auto-merge skipped. Rebase \`${HEAD_REF}\` against \`main\` and push; the existing approval still applies once conflicts are gone."
+            gh pr edit "$PR" --add-label "merge-conflict" || true
             exit 0
           fi
           gh pr edit "$PR" --remove-label "merge-conflict" 2>/dev/null || true
 
-          IS_DRAFT=$(gh pr view "$PR" --json isDraft -q .isDraft)
-          if [ "$IS_DRAFT" = "true" ]; then
-            gh pr ready "$PR"
-          fi
-
-          gh pr comment "$PR" --body "CI green and \`devin-review\` set — enabling auto-merge (merge commit, branch will be deleted)."
+          gh pr comment "$PR" --body "CI green and approved — enabling auto-merge (merge commit, branch will be deleted)."
           gh pr merge   "$PR" --auto --merge --delete-branch

@@ -19,16 +19,16 @@ You are one of several Devin instances working on this repo simultaneously, each
 - Touch the minimum number of files needed. Do NOT do drive-by refactors, formatting passes, or import reorganizations outside your task.
 - After completing each change, post a one-sentence reminder of what just changed (e.g. "Added is_active flag to user_layout_progress and wired the toggle into LayoutsPage") and then ask the user: "Want me to commit and push this?" Do not run `git commit` or `git push` until the user says yes. When approved, do all three of the following back-to-back: (1) commit with `[<slug>]` prefix, (2) push to `origin/devin/<slug>`, (3) `scripts/devin-locks.sh release <slug>` to free your claim. The lock represents "work in flight in this worktree" — once your changes are on the remote, the lock is no longer needed. `release` is idempotent, so subsequent CI-fix pushes don't need to re-claim.
 - If tests fail on `main` (not caused by you), STOP and report — do not "fix" unrelated breakage.
-- CI runs `pnpm install --frozen-lockfile + pnpm build + pnpm test` automatically on every PR push via `.github/workflows/ci.yml`. If CI fails, the workflow comments with a link to the run logs and applies the `status: failing` label. Fix the failure and push again — do not request `devin-review` until CI is green.
+- CI runs `pnpm install --frozen-lockfile + pnpm build + pnpm test` automatically on every PR push via `.github/workflows/ci.yml`. If CI fails, the workflow comments with a link to the run logs and applies `status: failing`. Fix the failure and push again. Auto-merge fires only when CI is green AND a human has submitted an approving GitHub review on the PR.
 
 ## Shutdown sequence (do these IN ORDER when the task is complete)
 1. Run the verification sequence from `.devin/knowledge.md`.
 2. If you learned something future instances should know (new gotcha, missing convention, wrong path), append a note to `.devin/knowledge.md` as part of your PR.
-3. Push the branch and open a DRAFT PR against `main` titled `[<slug>] <one-line summary>`. CI runs automatically on every push:
-   - Do NOT apply the `devin-review` label yourself. The human applies it once they've reviewed the diff; that's their explicit "merge it" signal.
-   - Do NOT mark the PR ready, run `gh pr merge`, or rebase `main` yourself. Once a human applies `devin-review` and CI is green, the workflow marks it ready, enables auto-merge (merge commit), and deletes the branch.
-   - If CI is red, the workflow comments with the failing run URL and applies `status: failing`. Fix and re-push; do not ask for `devin-review` until green.
-   - If the workflow detects a merge conflict at auto-merge time, it removes `devin-review`, applies `merge-conflict`, and asks you to rebase. Do that, push, and the human can re-apply `devin-review`.
+3. Push the branch and open a regular PR (NOT draft) against `main` titled `[<slug>] <one-line summary>`. CI runs automatically on every push:
+   - Do NOT run `gh pr merge`, mark anything yourself, or rebase `main`. Once CI is green AND a human submits an approving GitHub review (Files → Review changes → Approve), the workflow enables auto-merge (merge commit) and deletes the branch on merge.
+   - If CI is red, the workflow comments with the failing run URL and applies `status: failing`. Fix and re-push — any earlier approval is preserved by GitHub on subsequent commits, so you don't need a new approval after the fix.
+   - If the workflow detects a merge conflict at auto-merge time, it applies `merge-conflict` and tells you to rebase. Do that, push, and the existing approval applies once conflicts are gone.
+   - There is no merge-trigger label. Approval is the only manual signal; everything else is automatic.
 4. Your lock should already be released (it gets released in the commit/push step above). Run `scripts/devin-locks.sh list` to confirm — if your slug is still listed (e.g. you abandoned the task without ever pushing), run `scripts/devin-locks.sh release <slug>`. Release is idempotent.
 
 ## If you crash or get interrupted
