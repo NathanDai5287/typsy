@@ -77,6 +77,24 @@ export interface OnboardingPayload {
   layout_id: number;
 }
 
+/**
+ * Body for `POST /api/user/initial-setup` — the first-run flow that asks
+ * the user which layout they already use day-to-day and (optionally) which
+ * one they'd like to learn next.
+ *
+ * - `daily_driver_layout_id` is created with `is_main_layout = 1` and every
+ *   alpha key already unlocked (no progressive ramp-up — the user already
+ *   knows the layout).
+ * - `learn_layout_id`, if present, is created with `is_main_layout = 0` and
+ *   the standard initial-subset unlock; it also becomes the active layout
+ *   so /practice opens straight on the new thing the user is here to learn.
+ *   When omitted, the daily driver becomes active.
+ */
+export interface InitialSetupPayload {
+  daily_driver_layout_id: number;
+  learn_layout_id?: number;
+}
+
 export interface ProgressUpdatePayload {
   layout_id: number;
   unlocked_keys_json?: string; // JSON string: string[]

@@ -150,7 +150,7 @@ There is no separate `lint` or `typecheck` command — `pnpm build` is the typec
 | Route table | `apps/web/src/App.tsx` |
 | Practice page (typing loop, mode toggle, keyboard) | `apps/web/src/pages/PracticePage.tsx` |
 | Dashboard (charts, heatmaps, top-N weak ngrams) | `apps/web/src/pages/DashboardPage.tsx` |
-| Onboarding (layout pick + fingering assignment) | `apps/web/src/pages/OnboardingPage.tsx` |
+| Onboarding (3 steps: daily driver → optional learn-layout → fingering) | `apps/web/src/pages/OnboardingPage.tsx` |
 | Optimize page (50k-char gate, before/after heatmaps) | `apps/web/src/pages/OptimizePage.tsx` |
 | Layouts list + switch / mark-as-daily-driver | `apps/web/src/pages/LayoutsPage.tsx` |
 | Fingering editor (per-layout finger reassignment) | `apps/web/src/pages/FingeringPage.tsx` |
@@ -237,6 +237,7 @@ There is no separate `lint` or `typecheck` command — `pnpm build` is the typec
 - **Server uses NodeNext module resolution; web uses Bundler.** That's why server-side relative imports need `.js` extensions and web-side ones use `.ts`/`.tsx`. Don't "fix" what looks like an inconsistency — it's deliberate per `tsconfig.json` in each app.
 - **`KeyboardEvent.code` (not `key`) is the source of truth for typing.** `code` is layout-independent — `KeyF` is always the F-position key regardless of OS keyboard setting. The `translateKeypress` function in `packages/shared/src/inputMode.ts` maps `event.code` → row/col → active-layout char. **Do not switch to `event.key`** — it would break the whole "practice any layout from a QWERTY OS" premise.
 - **Fingerings are user-level and keyed by physical position, NOT by character.** `users.fingering_map_json` is a JSON `Record<"row,col", FingerLabel>` (use `posKey(pos)` from `packages/shared/src/layouts.ts` to compute the key). The same map applies to every layout because the user's hands are anchored to physical keys, not to the chars a layout puts there. `KeyPosition.finger` (the column-based default in `COL_TO_FINGER`) is the fallback for any position the user hasn't customized. `buildFingerMap` and `buildLayoutIndex` both take this position-keyed override and resolve to a `char → finger` map at the layout boundary. The `/fingering` page is a single editor with no layout picker (the layout button there is a *display* choice — switching it doesn't move the data, since the data isn't tied to a layout). The optimizer no longer needs to "reset" fingering on a generated layout: positions persist across the swap, so the user's map carries through automatically.
+- **Onboarding is two decisions, not one.** The flow is `daily driver → optional learn-layout → fingering`. The daily driver defaults to QWERTY (overwhelming-majority assumption) and is created with `is_main_layout = 1` and every alpha key already unlocked — no progressive ramp-up, since the user already knows it. The learn-layout (default Colemak, skippable) is created with `is_main_layout = 0` and the standard initial-subset unlock; when present it becomes the active layout, so `/practice` opens straight on the new thing the user is here to learn. Both rows + the active-layout pointer are written by `POST /api/user/initial-setup` in a single `db.transaction` — that endpoint also resets `is_main_layout = 0` on every existing row first so re-running with a different daily-driver choice doesn't leave a phantom second flag. The older `POST /api/user/onboarding` (single layout, no `is_main_layout` flag) still exists and is used by the "Set up" button on `/layouts` for adding additional learning layouts to an already-onboarded user.
 - **The Graphite layout in `packages/shared/src/layouts.ts` is a best-effort placeholder.** See the `TODO` comment there. Not yet validated against the official reference.
 - **Built-in layouts (QWERTY/Colemak/Graphite) cannot be deleted.** `SEEDED_NAMES` in `apps/server/src/routes/layouts.ts` enforces this.
 - **All pure-function tests must work without a real `Math.random`.** Functions like `generateDrillSequence`, `generateFlowLine`, `runAnnealing` accept an injectable `rng` parameter — use it in tests for determinism.
@@ -267,13 +268,16 @@ pnpm test
 rm -f apps/server/data/typsy.db*
 pnpm --filter server dev   # watch the log for "[migrations] applied 001_initial.sql"
                             # then "[migrations] applied 002_main_layout.sql"
+                            # then "[migrations] applied 003_user_fingering.sql"
                             # then "Server running on http://localhost:3001"
 # Ctrl-C once you see the running line.
 
 # 4. If you touched apps/web/, do a manual smoke test:
 pnpm dev
-# open http://localhost:5173, complete onboarding (Colemak, default fingering),
-# type a few characters on /practice, confirm green-on-correct / red-on-wrong,
+# open http://localhost:5173, complete onboarding (3 steps:
+# QWERTY = daily driver, Colemak = learn, default fingering — or
+# skip the learn step entirely with the "Skip" button), type a few
+# characters on /practice, confirm green-on-correct / red-on-wrong,
 # and that POST /api/sessions and POST /api/ngrams/batch fire
 # (Network tab in DevTools).
 

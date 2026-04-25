@@ -3,6 +3,7 @@ import type {
   Layout,
   LayoutSummary,
   OnboardingPayload,
+  InitialSetupPayload,
   ProgressUpdatePayload,
   UserFingeringPayload,
   SessionPayload,
@@ -59,6 +60,18 @@ export function deleteLayout(id: number): Promise<{ ok: boolean }> {
 
 export function postOnboarding(payload: OnboardingPayload): Promise<UserResponse> {
   return request<UserResponse>('/user/onboarding', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * First-run setup: declares the user's daily-driver layout and (optionally)
+ * the layout they'd like to learn next. Atomic on the server — both progress
+ * rows and the active-layout pointer are written in a single transaction.
+ */
+export function postInitialSetup(payload: InitialSetupPayload): Promise<UserResponse> {
+  return request<UserResponse>('/user/initial-setup', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
