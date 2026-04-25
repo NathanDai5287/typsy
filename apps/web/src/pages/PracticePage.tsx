@@ -539,12 +539,15 @@ export default function PracticePage(): JSX.Element {
         </div>
       </div>
 
-      {/* End-of-session toast */}
+      {/* End-of-session toast — fixed-position so it doesn't shift the
+          typing area / on-screen keyboard down when it appears. Mirrors
+          the placement and layering of <LeaderHint> (z-30 here so it
+          sits *under* a leader hint if both somehow coexist). */}
       {lastSummary && (
         <div
           role="status"
           aria-live="polite"
-          className="mb-3 panel px-3 py-1 text-xs font-mono flex items-center gap-2"
+          className="fixed bottom-10 right-4 z-30 panel px-3 py-2 text-xs font-mono flex items-center gap-2 select-none"
         >
           <span className="text-fg4">
             {lastSummary.mode === 'flow' ? 'session saved' : 'drill ended'}
