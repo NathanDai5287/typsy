@@ -47,20 +47,24 @@ jobs:
       - name: Test
         run: pnpm test
 
-  enqueue:
-    name: enable auto-merge
+  auto-merge:
+    name: auto-merge on green
+    needs: test
     if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       pull-requests: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
       PR: ${{ github.event.pull_request.number }}
     steps:
-      - name: Enable auto-merge
-        # `--auto` queues the PR; GitHub merges it as soon as required
-        # checks (this workflow's `test` job) pass. Idempotent — safe to
-        # re-run on every push.
-        run: gh pr merge "$PR" --auto --merge --delete-branch
+      - name: Merge PR
+        # Runs only after `test` succeeds (via `needs: test`). We avoid
+        # `gh pr merge --auto` because the default GITHUB_TOKEN can't
+        # call enablePullRequestAutoMerge ("Resource not accessible by
+        # integration"). A direct merge with contents+PR write perms
+        # works fine. `|| true` so a race (PR already merged by another
+        # run, e.g. force-push) doesn't fail the workflow.
+        run: gh pr merge "$PR" --merge --delete-branch || true
