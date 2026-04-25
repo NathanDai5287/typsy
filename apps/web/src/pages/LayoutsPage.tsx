@@ -126,12 +126,12 @@ function LayoutCard({ summary, isPending, onSetActive, onSetMain, onSetUp }: Lay
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold text-white">{summary.layout.name}</h2>
             {summary.is_active && (
-              <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-600 text-white">
+              <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-600 text-crust">
                 Active
               </span>
             )}
             {summary.is_main_layout && (
-              <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-yellow-600 text-white">
+              <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-yellow-600 text-crust">
                 Daily
               </span>
             )}
@@ -180,7 +180,7 @@ function LayoutCard({ summary, isPending, onSetActive, onSetMain, onSetUp }: Lay
             type="button"
             onClick={onSetUp}
             disabled={isPending}
-            className="px-3 py-1.5 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+            className="px-3 py-1.5 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-crust font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
           >
             {isPending ? 'Setting up…' : 'Set up'}
           </button>
@@ -191,7 +191,7 @@ function LayoutCard({ summary, isPending, onSetActive, onSetMain, onSetUp }: Lay
                 type="button"
                 onClick={onSetActive}
                 disabled={isPending}
-                className="px-3 py-1.5 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                className="px-3 py-1.5 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-crust font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
               >
                 {isPending ? 'Switching…' : 'Switch to'}
               </button>

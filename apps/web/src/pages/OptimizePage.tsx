@@ -172,7 +172,7 @@ export default function OptimizePage() {
           <span
             className={[
               'px-2 py-0.5 text-[10px] uppercase tracking-wider rounded-full',
-              ready ? 'bg-green-700 text-green-100' : 'bg-gray-700 text-gray-300',
+              ready ? 'bg-green-700 text-crust' : 'bg-gray-700 text-gray-300',
             ].join(' ')}
           >
             {ready ? 'Ready' : 'Practice more first'}
@@ -197,7 +197,7 @@ export default function OptimizePage() {
           type="button"
           disabled={!ready || isRunning}
           onClick={() => runOptimizer('single-swap')}
-          className="px-4 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+          className="px-4 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-crust font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
         >
           {isRunning ? 'Searching…' : 'Suggest one swap'}
         </button>
@@ -325,7 +325,7 @@ function SuggestionPanel({
             type="button"
             onClick={onAccept}
             disabled={isAccepting}
-            className="px-4 py-2 text-sm rounded-lg bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+            className="px-4 py-2 text-sm rounded-lg bg-green-600 hover:bg-green-500 disabled:opacity-40 text-crust font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
           >
             {isAccepting ? 'Applying…' : 'Apply (creates a new custom layout & switches)'}
           </button>

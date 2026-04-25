@@ -32,6 +32,22 @@ import {
   YAxis,
 } from 'recharts';
 
+// Catppuccin Mocha hex tokens for the Recharts SVGs (which can't read
+// Tailwind classes). Keep these in sync with `tailwind.config.js`.
+const CHART = {
+  grid:       '#45475a', // surface1
+  axis:       '#7f849c', // overlay1
+  tooltipBg:  '#181825', // mantle
+  tooltipBd:  '#45475a', // surface1
+  wpmLine:    '#89b4fa', // blue
+  volumeLine: '#a6e3a1', // green
+  accLine:    '#f9e2af', // yellow
+};
+const TOOLTIP_STYLE = {
+  background: CHART.tooltipBg,
+  border: `1px solid ${CHART.tooltipBd}`,
+};
+
 // ─── Subcomponents ───────────────────────────────────────────────────────
 
 function StatCard({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
@@ -172,22 +188,22 @@ export default function DashboardPage() {
               <PanelHeading>WPM over time</PanelHeading>
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={series} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
-                  <CartesianGrid stroke="#1f2937" strokeDasharray="4 4" />
+                  <CartesianGrid stroke={CHART.grid} strokeDasharray="4 4" />
                   <XAxis
                     dataKey="endedAt"
                     tickFormatter={(t) => formatShortDate(t)}
-                    stroke="#6b7280"
+                    stroke={CHART.axis}
                     fontSize={11}
                   />
-                  <YAxis stroke="#6b7280" fontSize={11} domain={[0, 'auto']} />
+                  <YAxis stroke={CHART.axis} fontSize={11} domain={[0, 'auto']} />
                   <Tooltip
-                    contentStyle={{ background: '#0f172a', border: '1px solid #1f2937' }}
+                    contentStyle={TOOLTIP_STYLE}
                     labelFormatter={(t) => formatLongDate(String(t))}
                     formatter={(v: number, k: string) =>
                       k === 'wpm' ? [v.toFixed(1), 'WPM'] : [v, k]
                     }
                   />
-                  <Line type="monotone" dataKey="wpm" stroke="#60a5fa" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="wpm" stroke={CHART.wpmLine} strokeWidth={2} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             </section>
@@ -196,21 +212,21 @@ export default function DashboardPage() {
               <PanelHeading>WPM over volume</PanelHeading>
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={series} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
-                  <CartesianGrid stroke="#1f2937" strokeDasharray="4 4" />
+                  <CartesianGrid stroke={CHART.grid} strokeDasharray="4 4" />
                   <XAxis
                     dataKey="cumulativeChars"
                     type="number"
                     tickFormatter={(t) => `${(t / 1000).toFixed(0)}k`}
-                    stroke="#6b7280"
+                    stroke={CHART.axis}
                     fontSize={11}
                   />
-                  <YAxis stroke="#6b7280" fontSize={11} domain={[0, 'auto']} />
+                  <YAxis stroke={CHART.axis} fontSize={11} domain={[0, 'auto']} />
                   <Tooltip
-                    contentStyle={{ background: '#0f172a', border: '1px solid #1f2937' }}
+                    contentStyle={TOOLTIP_STYLE}
                     labelFormatter={(t) => `${Number(t).toLocaleString()} chars`}
                     formatter={(v: number) => [v.toFixed(1), 'WPM']}
                   />
-                  <Line type="monotone" dataKey="wpm" stroke="#34d399" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="wpm" stroke={CHART.volumeLine} strokeWidth={2} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             </section>
@@ -221,28 +237,28 @@ export default function DashboardPage() {
             <PanelHeading>Accuracy trend</PanelHeading>
             <ResponsiveContainer width="100%" height={180}>
               <LineChart data={series} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
-                <CartesianGrid stroke="#1f2937" strokeDasharray="4 4" />
+                <CartesianGrid stroke={CHART.grid} strokeDasharray="4 4" />
                 <XAxis
                   dataKey="endedAt"
                   tickFormatter={(t) => formatShortDate(t)}
-                  stroke="#6b7280"
+                  stroke={CHART.axis}
                   fontSize={11}
                 />
                 <YAxis
                   domain={[0.5, 1]}
                   tickFormatter={(t) => `${(t * 100).toFixed(0)}%`}
-                  stroke="#6b7280"
+                  stroke={CHART.axis}
                   fontSize={11}
                 />
                 <Tooltip
-                  contentStyle={{ background: '#0f172a', border: '1px solid #1f2937' }}
+                  contentStyle={TOOLTIP_STYLE}
                   labelFormatter={(t) => formatLongDate(String(t))}
                   formatter={(v: number) => [`${(v * 100).toFixed(1)}%`, 'Accuracy']}
                 />
                 <Line
                   type="monotone"
                   dataKey="accuracy"
-                  stroke="#fbbf24"
+                  stroke={CHART.accLine}
                   strokeWidth={2}
                   dot={false}
                 />
@@ -257,19 +273,19 @@ export default function DashboardPage() {
         <PanelHeading>Per-finger WPM</PanelHeading>
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={fingerAgg} margin={{ top: 5, right: 10, bottom: 30, left: 0 }}>
-            <CartesianGrid stroke="#1f2937" strokeDasharray="4 4" />
+            <CartesianGrid stroke={CHART.grid} strokeDasharray="4 4" />
             <XAxis
               dataKey="finger"
               tickFormatter={(f: string) => f.replace(/^left_|^right_/, '').slice(0, 3)}
-              stroke="#6b7280"
+              stroke={CHART.axis}
               fontSize={11}
               angle={-45}
               textAnchor="end"
               height={50}
             />
-            <YAxis stroke="#6b7280" fontSize={11} />
+            <YAxis stroke={CHART.axis} fontSize={11} />
             <Tooltip
-              contentStyle={{ background: '#0f172a', border: '1px solid #1f2937' }}
+              contentStyle={TOOLTIP_STYLE}
               formatter={(v: number, _k, p) => {
                 const a = p?.payload?.accuracy as number | undefined;
                 return [

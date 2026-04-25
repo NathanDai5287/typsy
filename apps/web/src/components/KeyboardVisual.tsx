@@ -56,6 +56,9 @@ export default function KeyboardVisual({
             const isNext = nextChar === pos.char;
             const finger = fingerOverrides?.[pos.char] ?? pos.finger;
             const bg = isUnlocked ? FINGER_BG[finger] : 'bg-gray-800';
+            // Catppuccin's pastel finger fills want dark text for contrast;
+            // locked keys keep light text on the dark surface.
+            const textColor = isUnlocked ? 'text-crust' : 'text-gray-200';
             const hits = charHits?.get(pos.char) ?? 0;
             // Opacity drops from 1.0 at hits=0 to 0.35 at hits=500+ (linear, clamped).
             const fade = Math.min(1, hits / 500) * fadeStrength;
@@ -72,8 +75,9 @@ export default function KeyboardVisual({
               <div
                 key={`${pos.row}-${pos.col}`}
                 className={[
-                  'relative w-9 h-9 rounded font-mono text-sm font-medium flex items-center justify-center text-white transition-all',
+                  'relative w-9 h-9 rounded font-mono text-sm font-medium flex items-center justify-center transition-all',
                   bg,
+                  textColor,
                   ring,
                 ].join(' ')}
                 style={{ opacity }}
