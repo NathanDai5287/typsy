@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchLayouts, postOnboarding } from '../lib/api.ts';
-import type { Layout, KeyPosition, FingerLabel } from '@typsy/shared';
+import type { Layout, KeyPosition, FingerLabel, UserResponse } from '@typsy/shared';
 import FingeringEditor from '../components/FingeringEditor.tsx';
 
 // ─── Step 1: Pick layout ─────────────────────────────────────────────────────
@@ -125,8 +125,12 @@ export default function OnboardingPage() {
 
   const mutation = useMutation({
     mutationFn: postOnboarding,
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['user'] });
+    onSuccess: (response) => {
+      // Seed the user query synchronously so App.tsx sees layout_progress
+      // populated before we navigate. Otherwise the redirect at "/" would
+      // race the refetch from invalidateQueries, see needsOnboarding=true,
+      // and bounce the user back into onboarding a second time.
+      queryClient.setQueryData<UserResponse>(['user'], response);
       navigate('/');
     },
   });
