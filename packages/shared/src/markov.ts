@@ -162,14 +162,18 @@ function pickStartState(rowTotals: Map<string, number>, rng: () => number): stri
 }
 
 /**
- * Top-K weakest bigrams in the user's stats (smoothed-error × user-attempt-weighted).
- * Restricted to bigrams whose chars are all in `allowed`.
+ * Top-K weakest bigrams in the user's stats, paired with their weakness
+ * scores (smoothed-error × English-corpus-frequency). Restricted to bigrams
+ * whose chars are all in `allowed`.
+ *
+ * Drill generation feeds these scores into a jittered/softmax selector so
+ * scores survive the trip to the sampler, not just the rank order.
  */
-export function topWeakBigrams(
+export function topWeakBigramsScored(
   userIndex: NgramIndex,
   allowed: ReadonlySet<string>,
   topK = 3,
-): string[] {
+): { bigram: string; score: number }[] {
   const base = getBaseTransitions();
   const baseTotal = sumAllWeights(base);
   const scored: { bigram: string; score: number }[] = [];
@@ -184,5 +188,17 @@ export function topWeakBigrams(
     }
   }
   scored.sort((x, y) => y.score - x.score);
-  return scored.slice(0, topK).map((s) => s.bigram);
+  return scored.slice(0, topK);
+}
+
+/**
+ * Top-K weakest bigrams in the user's stats (smoothed-error × user-attempt-weighted).
+ * Restricted to bigrams whose chars are all in `allowed`.
+ */
+export function topWeakBigrams(
+  userIndex: NgramIndex,
+  allowed: ReadonlySet<string>,
+  topK = 3,
+): string[] {
+  return topWeakBigramsScored(userIndex, allowed, topK).map((s) => s.bigram);
 }

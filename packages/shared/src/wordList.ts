@@ -104,16 +104,17 @@ export function wordsUsingOnly(
 
 /**
  * Top-frequency corpus words that (a) contain `substring` and (b) use only
- * `allowedChars`. Returns at most `limit` words sorted by descending frequency.
+ * `allowedChars`, paired with their raw counts. Returns at most `limit`
+ * entries sorted by descending count.
  *
- * Used by drill generation to follow a bigram burst with real words that
- * exercise the same motor pattern (e.g. `"st"` → `["state", "first", "must"]`).
+ * Drill generation uses this to feed a softmax/jitter-weighted sampler so
+ * variety can be introduced over the same bigram across consecutive drills.
  */
-export function wordsContaining(
+export function wordsContainingScored(
   substring: string,
   allowedChars: ReadonlySet<string>,
-  limit = 3,
-): string[] {
+  limit = 10,
+): { word: string; count: number }[] {
   if (substring.length === 0) return [];
   const out: { word: string; count: number }[] = [];
   for (const [word, count] of WORD_COUNTS) {
@@ -128,5 +129,20 @@ export function wordsContaining(
     if (ok) out.push({ word, count });
   }
   out.sort((a, b) => b.count - a.count);
-  return out.slice(0, limit).map((x) => x.word);
+  return out.slice(0, limit);
+}
+
+/**
+ * Top-frequency corpus words that (a) contain `substring` and (b) use only
+ * `allowedChars`. Returns at most `limit` words sorted by descending frequency.
+ *
+ * Used by drill generation to follow a bigram burst with real words that
+ * exercise the same motor pattern (e.g. `"st"` → `["state", "first", "must"]`).
+ */
+export function wordsContaining(
+  substring: string,
+  allowedChars: ReadonlySet<string>,
+  limit = 3,
+): string[] {
+  return wordsContainingScored(substring, allowedChars, limit).map((x) => x.word);
 }
