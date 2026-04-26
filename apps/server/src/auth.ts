@@ -26,7 +26,7 @@
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import admin from 'firebase-admin';
 import { getDb } from './db/client.js';
-import { getCurrentUserId, REAL_USER_ID } from './db/dataMode.js';
+import { getCurrentDataMode, getCurrentUserId, REAL_USER_ID } from './db/dataMode.js';
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -157,7 +157,13 @@ export const authMiddleware: RequestHandler = async (
     initAdmin();
     const decoded = await admin.auth().verifyIdToken(token);
     req.firebaseUid = decoded.uid;
-    req.userId = resolveUserId(decoded.uid);
+    // Dev override: when the server is started in synthetic mode, every
+    // authed request reads/writes the synthetic user regardless of which
+    // Firebase account signed in. Lets you flip between real/synthetic
+    // data without signing out.
+    req.userId = getCurrentDataMode() === 'synthetic'
+      ? getCurrentUserId()
+      : resolveUserId(decoded.uid);
     next();
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
