@@ -208,4 +208,192 @@ describe('generateFlowLine', () => {
     // No single word should be more than ~25% of the output.
     expect(maxCount).toBeLessThanOrEqual(Math.ceil(words.length * 0.25));
   });
+
+  it('biases sampling toward words containing a slow bigram (no errors)', () => {
+    // "er" is error-free but takes 4× the user's baseline time. With
+    // alpha=1 and maxSlowExcess=1 it carries the same per-bigram
+    // weight as a 100% miss rate would — so words containing "er"
+    // should appear noticeably more than at cold start.
+    const allowed = new Set('abcdefghijklmnopqrstuvwxyz'.split(''));
+    // Baseline data: a handful of bigrams typed at ~200ms each define
+    // the user's baseline. "er" sits at 800ms (4× baseline).
+    const userIndex = indexNgramStats([
+      // 1000 hits at 200ms each → mean = 200ms
+      { ngram: 'th', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 200_000 },
+      { ngram: 'he', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 200_000 },
+      { ngram: 'in', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 200_000 },
+      { ngram: 'an', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 200_000 },
+      { ngram: 're', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 200_000 },
+      { ngram: 'on', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 200_000 },
+      { ngram: 'at', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 200_000 },
+      // "er" is the slow one: 800ms / hit
+      { ngram: 'er', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 800_000 },
+    ]);
+    const seedRng = (seed: number) => () => {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    };
+    const baseline = generateFlowLine({
+      allowed,
+      userIndex: indexNgramStats([]),
+      numWords: 50,
+      rng: seedRng(7),
+    }).split(' ');
+    const biased = generateFlowLine({
+      allowed,
+      userIndex,
+      numWords: 50,
+      rng: seedRng(7),
+    }).split(' ');
+
+    const baselineEr = baseline.filter((w) => w.includes('er')).length;
+    const biasedEr = biased.filter((w) => w.includes('er')).length;
+
+    // Slow-bigram condition should yield substantially more "er" words
+    // than the no-data baseline.
+    expect(biasedEr).toBeGreaterThan(baselineEr);
+  });
+
+  it('biases sampling toward words with a high trigram error rate', () => {
+    // Pin "ing" to a near-certain error rate at the trigram level
+    // WITHOUT inflating its constituent bigrams ("in", "ng") or chars.
+    // Words containing "ing" should win via the trigram path alone.
+    const allowed = new Set('abcdefghijklmnopqrstuvwxyz'.split(''));
+    const userIndex = indexNgramStats([
+      { ngram: 'ing', ngram_type: 'char3', hits: 0, misses: 1000, total_time_ms: 0 },
+    ]);
+    const seedRng = (seed: number) => () => {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    };
+    const baseline = generateFlowLine({
+      allowed,
+      userIndex: indexNgramStats([]),
+      numWords: 80,
+      rng: seedRng(31),
+    }).split(' ');
+    const biased = generateFlowLine({
+      allowed,
+      userIndex,
+      numWords: 80,
+      rng: seedRng(31),
+    }).split(' ');
+
+    const baselineIng = baseline.filter((w) => w.includes('ing')).length;
+    const biasedIng = biased.filter((w) => w.includes('ing')).length;
+
+    // Painful-trigram condition should yield more "ing" words than the
+    // no-data baseline.
+    expect(biasedIng).toBeGreaterThan(baselineIng);
+  });
+
+  it('cold-start (no timing data) still produces varied lengths', () => {
+    // Regression: introducing timing-based scoring shouldn't disrupt
+    // the cold-start "all words score equally" property. With no
+    // bigram-timing data, baseline falls back to defaultBaselineMs
+    // and every slow_excess is 0, so output should still span a wide
+    // range of word lengths.
+    const allowed = new Set('abcdefghijklmnopqrstuvwxyz'.split(''));
+    const seedRng = (seed: number) => () => {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    };
+    const line = generateFlowLine({
+      allowed,
+      userIndex: indexNgramStats([]),
+      numWords: 30,
+      rng: seedRng(42),
+    });
+    const lengths = new Set(line.split(' ').map((w) => w.length));
+    expect(lengths.size).toBeGreaterThanOrEqual(5);
+  });
+
+  it('no per-bigram timing data => slowness contributes nothing', () => {
+    // When all bigram error rates are equal AND no timing data exists,
+    // sampling should be effectively uniform within each length bucket.
+    // A single bigram with `time_total > 0` but below minSlowSamples
+    // attempts must NOT skew the score.
+    const allowed = new Set('abcdefghijklmnopqrstuvwxyz'.split(''));
+    const userIndex = indexNgramStats([
+      // Below minSlowSamples (default 10) → slowness ignored
+      { ngram: 'er', ngram_type: 'char2', hits: 5, misses: 0, total_time_ms: 5_000 }, // would be 1000ms/hit
+    ]);
+    const seedRng = (seed: number) => () => {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    };
+    const a = generateFlowLine({
+      allowed,
+      userIndex: indexNgramStats([]),
+      numWords: 50,
+      rng: seedRng(101),
+    });
+    const b = generateFlowLine({
+      allowed,
+      userIndex,
+      numWords: 50,
+      rng: seedRng(101),
+    });
+    // The under-sampled "er" timing must NOT change the output: with
+    // identical RNG seeds, the two outputs should be identical.
+    expect(b).toEqual(a);
+  });
+
+  it('alpha=0 + delta=0 makes timing data invisible to scoring', () => {
+    // Knob test: zeroing both slowness coefficients should make the
+    // generator ignore timing data entirely. Two indexes identical in
+    // error counts but wildly different in `total_time_ms` must
+    // produce identical output once `alpha=0, delta=0`.
+    const allowed = new Set('abcdefghijklmnopqrstuvwxyz'.split(''));
+    const fast = indexNgramStats([
+      { ngram: 'th', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 200_000 },
+      { ngram: 'he', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 200_000 },
+      { ngram: 'in', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 200_000 },
+      { ngram: 'er', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 200_000 },
+    ]);
+    const slow = indexNgramStats([
+      { ngram: 'th', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 200_000 },
+      { ngram: 'he', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 200_000 },
+      { ngram: 'in', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 200_000 },
+      // "er" is wildly slow ONLY in the slow index
+      { ngram: 'er', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 800_000 },
+    ]);
+    const seedRng = (seed: number) => () => {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    };
+    const off1 = generateFlowLine({
+      allowed,
+      userIndex: fast,
+      numWords: 50,
+      alpha: 0,
+      delta: 0,
+      rng: seedRng(7),
+    });
+    const off2 = generateFlowLine({
+      allowed,
+      userIndex: slow,
+      numWords: 50,
+      alpha: 0,
+      delta: 0,
+      rng: seedRng(7),
+    });
+    expect(off1).toEqual(off2);
+
+    // Sanity: with the default coefficients ON, the same comparison
+    // should produce DIFFERENT output (slowness is doing something).
+    const on1 = generateFlowLine({
+      allowed,
+      userIndex: fast,
+      numWords: 50,
+      rng: seedRng(7),
+    });
+    const on2 = generateFlowLine({
+      allowed,
+      userIndex: slow,
+      numWords: 50,
+      rng: seedRng(7),
+    });
+    expect(on1).not.toEqual(on2);
+  });
 });
