@@ -161,8 +161,8 @@ rm apps/server/data/typsy.db*
 ```
 
 The next `pnpm dev` (or `seed:dev`) re-creates the DB from scratch via
-migrations + the layout seeder (QWERTY, Colemak, Graphite) and re-creates
-both users.
+migrations + the layout seeder (QWERTY, Colemak, Colemak DH, Graphite,
+Dvorak, Workman, Canary) and re-creates both users.
 
 > ⚠️ This deletes your real practice sessions too. If you only want to
 > regenerate synthetic data, just re-run `pnpm --filter server seed:dev` —
