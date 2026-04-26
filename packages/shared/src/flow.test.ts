@@ -114,13 +114,13 @@ describe('generateFlowLine', () => {
     const baseline = generateFlowLine({
       allowed,
       userIndex: indexNgramStats([]),
-      numWords: 100,
+      numWords: 200,
       rng: seedRng(11),
     }).split(' ');
     const biased = generateFlowLine({
       allowed,
       userIndex,
-      numWords: 100,
+      numWords: 200,
       rng: seedRng(11),
     }).split(' ');
 

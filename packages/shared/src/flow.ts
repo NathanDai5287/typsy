@@ -11,9 +11,9 @@ export interface FlowOptions {
   numWords?: number;
   /**
    * Softmax temperature applied to MAX-normalized scores within a length
-   * bucket (lower = greedier). 0.4 is a moderate default that lets the
-   * user's weakness signal actually steer sampling without collapsing to
-   * the single highest-scoring word in a bucket.
+   * bucket (lower = greedier). 0.7 is a relaxed default that introduces
+   * meaningful variety while still letting the user's weakness signal
+   * steer sampling away from words they have already mastered.
    */
   temperature?: number;
   /**
@@ -25,7 +25,7 @@ export interface FlowOptions {
   topKPerLength?: number;
   /** Min word length to include (default 4). */
   minLength?: number;
-  /** Max word length to include (default 12). */
+  /** Max word length to include (default 9). */
   maxLength?: number;
   /**
    * Words to treat as already-seen (one decay step each). Combine with
@@ -339,10 +339,10 @@ export function generateFlowLine({
   allowed,
   userIndex,
   numWords = 20,
-  temperature = 0.4,
+  temperature = 0.7,
   topKPerLength = 20,
   minLength = 4,
-  maxLength = 12,
+  maxLength = 9,
   recent,
   recentDecay = 0.15,
   alpha = 1.0,
