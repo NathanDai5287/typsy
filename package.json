@@ -2,13 +2,19 @@
   "name": "typsy",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"pnpm --filter server dev\" \"pnpm --filter web dev\"",
-    "dev:synth": "pnpm --filter server seed:dev && TYPSY_DATA_MODE=synthetic concurrently \"pnpm --filter server dev\" \"pnpm --filter web dev\"",
+    "dev": "pnpm --filter @typsy/shared build && concurrently \"pnpm --filter @typsy/shared dev\" \"pnpm --filter server dev\" \"pnpm --filter web dev\"",
+    "dev:synth": "pnpm --filter @typsy/shared build && pnpm --filter server seed:dev && TYPSY_DATA_MODE=synthetic concurrently \"pnpm --filter @typsy/shared dev\" \"pnpm --filter server dev\" \"pnpm --filter web dev\"",
     "build": "pnpm -r build",
     "test": "pnpm -r test"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
     "typescript": "^5.4.5"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
   }
 }

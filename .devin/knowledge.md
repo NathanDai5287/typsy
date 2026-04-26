@@ -23,7 +23,7 @@ This file is the source of truth for project structure and conventions. **Do not
 ```
 
 ### `apps/server/` — Node + Express + better-sqlite3 (TypeScript, ESM)
-- **Entry point:** <ref_file file="/Users/natha/Programming/typsy/apps/server/src/index.ts" /> — boots Express on port 3001, mounts four routers, calls `getDb()` to run migrations + seed.
+- **Entry point:** <ref_file file="/Users/natha/Programming/typsy/apps/server/src/index.ts" /> — boots Express on port 3001, mounts four routers, calls `getDb()` to run migrations + seed. After the API mounts, a production block static-serves `apps/web/dist/` (resolved from `dist/index.js` as `../../web/dist`) and falls back to `index.html` for any non-`/api/*` GET, so a single Express process can serve both the API and the SPA on one origin behind a single Cloudflare hostname (typsy.cal.taxi). The block is guarded with `fs.existsSync` so dev (where `apps/web/dist` may be stale or absent) is unaffected.
 - `src/db/client.ts` — `getDb()` opens `apps/server/data/typsy.db`, applies any new `*.sql` files in `migrations/` (in lexical order, tracked via `_migrations` table), then runs `seedData()`.
 - `src/db/migrations/*.sql` — schema migrations. `001_initial.sql` defines `users`, `layouts`, `user_layout_progress`, `sessions`, `ngram_stats`. `002_main_layout.sql` adds `is_main_layout` flag. `003_user_fingering.sql` moves fingerings off `user_layout_progress` (where they were char-keyed and per-layout) onto `users.fingering_map_json` (position-keyed `"row,col"` → `FingerLabel`, layout-independent).
 - `src/db/seed.ts` — inserts the three built-in layouts plus two users: `id=1` (real) and `id=2` (synthetic). The schema already keys every per-user table by `user_id`, so the two are fully isolated.
@@ -47,6 +47,7 @@ This file is the source of truth for project structure and conventions. **Do not
 ### `packages/shared/` — Pure logic, no I/O (TypeScript, ESM)
 - Single barrel export at `src/index.ts`. Every consumer imports from `@typsy/shared`.
 - **No file in this package may read from disk, hit the network, or use globals other than `Math.random`** (which is injectable as `rng`). Everything is unit-testable in vitest with `environment: 'node'`.
+- **Has a tsc build step** (`pnpm --filter @typsy/shared build` → `dist/`). The package's `exports.default` points to `./dist/index.js` so it can be loaded by raw Node (production: `node dist/index.js` in `apps/server/`). `exports.types` still points to `./src/index.ts` for in-repo TS consumers. `pnpm dev` does a one-shot shared build before starting the concurrent watchers (`tsc -w` for shared, `tsx watch` for server, `vite` for web), so source edits in `packages/shared/src/` re-emit `dist/` and trigger a server restart.
 - See "Where to find X" below for which file does what.
 
 ---
@@ -76,7 +77,7 @@ pnpm install
 # Dev (web on 5173 + server on 3001 with hot reload)
 pnpm dev
 
-# Build (typecheck both apps + emit server dist + emit web dist)
+# Build (typecheck + emit shared dist + server dist + web dist; runs in topological order)
 pnpm build
 
 # Test (all packages)
@@ -88,8 +89,9 @@ pnpm --filter server dev
 pnpm --filter web test
 pnpm --filter server test
 pnpm --filter @typsy/shared test
-pnpm --filter web build      # tsc && vite build
-pnpm --filter server build   # tsc → apps/server/dist/
+pnpm --filter @typsy/shared build  # tsc → packages/shared/dist/
+pnpm --filter web build            # tsc && vite build
+pnpm --filter server build         # tsc + cp -R src/db/migrations → apps/server/dist/
 
 # Dev seed (writes synthetic ngrams + sessions to user_id=2; never touches real data)
 pnpm --filter server seed:dev                  # Colemak, 100k chars
@@ -254,6 +256,7 @@ There is no separate `lint` or `typecheck` command — `pnpm build` is the typec
 - **The lock file is keyed by `basename(git rev-parse --show-toplevel)`, which differs between worktrees and the main checkout.** A command run from cwd `/Users/.../typsy` writes to `~/.devin-locks/typsy.json`; the same command from cwd `/Users/.../worktrees/<slug>/` writes to `~/.devin-locks/<slug>.json`. Always run `claim` AND `release` from the SAME cwd (your worktree, as `scripts/devin-spawn.sh` instructs). A `release` from a different cwd silently no-ops with `(no claim for '<slug>')` and the original claim sits forever in the other file. If you suspect this happened, run `cat ~/.devin-locks/*.json` to find the stranded claim and re-`release` from the matching cwd.
 - **`.pnpm-store/` at the repo root** is from a previous local install; it's gitignored and safe to delete if you want to free space.
 - **No services need to be running.** No Postgres, no Redis, no message queue. SQLite is the entire backing store and `getDb()` creates it on demand.
+- **Production deploy contract.** The app ships as a single Express process: `cd apps/server && PORT=3001 NODE_ENV=production node dist/index.js`. For that to work the build must produce three things: `packages/shared/dist/` (raw `node` can't load `.ts`), `apps/server/dist/db/migrations/*.sql` (the server's `build` script `cp -R`s them — `tsc` doesn't), and `apps/web/dist/index.html` (the SPA fallback target). `pnpm install` builds the `better-sqlite3` native binding because the root `package.json` declares `pnpm.onlyBuiltDependencies` (pnpm v10+ blocks postinstall scripts by default — without that allowlist `pnpm install` silently skips the build and `node dist/index.js` crashes with "Could not locate the bindings file"). The deployed instance lives at `https://typsy.cal.taxi`, fronted by a Cloudflare tunnel on the same host that serves `ssh.cal.taxi`/`3000.cal.taxi`/`1048.cal.taxi`. systemd unit: `/etc/systemd/system/typsy.service`. Tunnel config: `/etc/cloudflared/config.yml` (sudo) — its `ingress` list maps `typsy.cal.taxi → http://localhost:3001`.
 
 ---
 
