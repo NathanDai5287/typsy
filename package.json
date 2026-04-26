@@ -2,7 +2,7 @@
   "name": "typsy",
   "private": true,
   "scripts": {
-    "dev": "pnpm --filter @typsy/shared build && concurrently \"pnpm --filter @typsy/shared dev\" \"pnpm --filter server dev\" \"pnpm --filter web dev\"",
+    "dev": "bash scripts/dev.sh",
     "dev:synth": "pnpm --filter @typsy/shared build && pnpm --filter server seed:dev && TYPSY_DATA_MODE=synthetic concurrently \"pnpm --filter @typsy/shared dev\" \"pnpm --filter server dev\" \"pnpm --filter web dev\"",
     "build": "pnpm -r build",
     "test": "pnpm -r test"

@@ -5,7 +5,9 @@ Day-to-day commands for working on Typsy.
 ## Common commands
 
 ```bash
-pnpm dev                         # web (5173) + server (3001), hot reload (real data)
+pnpm dev                         # web (5173) + server (3001), hot reload (local DB)
+pnpm dev --db=staging            # explicit form of the above
+pnpm dev --db=prod               # web only, talks to the production server's DB
 pnpm dev:synth                   # seed synthetic data + run dev in synthetic mode
 pnpm build                       # typecheck + build everything
 pnpm test                        # run all package tests
@@ -15,6 +17,66 @@ pnpm --filter server dev         # server only
 pnpm --filter @typsy/shared test # shared package tests only
 pnpm --filter web test           # web tests only
 ```
+
+## Local vs. production database (`pnpm dev --db=...`)
+
+`pnpm dev` accepts a `--db` flag that picks which SQLite the local web app
+talks to. Both modes always run `vite` on `http://localhost:5173`; the only
+thing that changes is what's behind `/api`.
+
+| Mode | What runs locally | What `/api` hits | Where writes land |
+|---|---|---|---|
+| `--db=staging` (default) | `tsc -w` for `@typsy/shared` + `tsx watch` for `apps/server` (port 3001) + `vite` for `apps/web` (port 5173) | the local server on port 3001 | `apps/server/data/typsy.db` (gitignored, local file) |
+| `--db=prod` | `ssh -N -L 3001:localhost:3001 natha@ssh.cal.taxi` (tunnel) + `tsc -w` for `@typsy/shared` + `vite` for `apps/web` (port 5173) | the production server through the SSH tunnel | `/home/natha/typsy/apps/server/data/typsy.db` on the Ubuntu box (the same DB `https://typsy.cal.taxi` reads/writes) |
+
+### `pnpm dev` (a.k.a. `pnpm dev --db=staging`)
+
+Standard local dev. Three concurrent processes — shared (tsc-watch),
+server (tsx-watch on 3001), web (vite on 5173) — all hot-reloading from
+source. Vite proxies `/api` to `http://localhost:3001`. Reads/writes go
+to your local SQLite at `apps/server/data/typsy.db`. Production data is
+untouched. **Use this for normal feature work.**
+
+### `pnpm dev --db=prod`
+
+Skips the local server entirely. Instead, opens an SSH tunnel that maps
+your Mac's `localhost:3001` to the Ubuntu server's `localhost:3001`
+(where `typsy.service` is listening). Vite's existing `/api` →
+`localhost:3001` proxy now lands at the production process, which
+reads/writes the production SQLite. Every API call from your local
+browser is a real production write, exactly as if you'd loaded
+`https://typsy.cal.taxi` directly — but with hot-reloading frontend
+code so you can iterate on UI without redeploying.
+
+Things to know:
+
+- **It is the production DB.** There is no copy-on-write, no scratch
+  branch, no undo. Sessions, ngrams, layout swaps you make in this mode
+  are real. Treat it like editing prod by hand.
+- **Frontend changes are local-only.** UI tweaks live in your `pnpm dev`
+  process; they don't deploy. To put them on `https://typsy.cal.taxi`
+  you still have to commit, push, redeploy.
+- **Backend changes will be missing.** If you edit `apps/server/` or
+  `packages/shared/` while in `--db=prod` mode, your local web sees the
+  new shared types but the server it's talking to is still running the
+  deployed code. Schema changes in particular will look broken — the
+  remote server has no idea about your new migration. Switch back to
+  `--db=staging` for any server-side work.
+- **No local server is running.** Port 3001 on your Mac is the SSH
+  tunnel for as long as the script runs. Closing it (Ctrl-C) tears down
+  both the tunnel and Vite; nothing is left bound. If you want to use
+  the local server again afterwards, run `pnpm dev` again (no flag).
+- **Auth.** There's none yet. Anyone who can reach
+  `https://typsy.cal.taxi` can read/write the same DB. The tunnel
+  doesn't add any protection beyond what Cloudflare already provides
+  on the public hostname.
+
+### `pnpm dev:synth`
+
+Same as `--db=staging` but seeds the synthetic user (`user_id=2`) with
+a fresh batch of fake ngrams + sessions and starts the server with
+`TYPSY_DATA_MODE=synthetic` so every read/write hits `user_id=2`. Real
+practice data on `user_id=1` is untouched. See the next section.
 
 ## Synthetic data (non-destructive, dev-only)
 

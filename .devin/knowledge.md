@@ -74,8 +74,14 @@ This file is the source of truth for project structure and conventions. **Do not
 # Install (once, after clone)
 pnpm install
 
-# Dev (web on 5173 + server on 3001 with hot reload)
-pnpm dev
+# Dev (web on 5173 + server on 3001 with hot reload, against the local SQLite)
+pnpm dev                  # same as --db=staging
+pnpm dev --db=staging     # explicit: local server + local DB
+pnpm dev --db=prod        # SSH tunnel to production API; web only locally
+                          #   (vite still on 5173; localhost:3001 becomes the
+                          #    tunnel to natha@ssh.cal.taxi:3001 — every API
+                          #    call writes to the production SQLite. No local
+                          #    server runs in this mode. Ctrl-C to stop.)
 
 # Build (typecheck + emit shared dist + server dist + web dist; runs in topological order)
 pnpm build
