@@ -18,6 +18,49 @@ pnpm --filter @typsy/shared test # shared package tests only
 pnpm --filter web test           # web tests only
 ```
 
+## First-time setup: env files
+
+Two env files are needed; both are gitignored. Copy each `.env.example` and
+fill in the values from your Firebase project (Console → Project Settings).
+
+```bash
+cp apps/server/.env.example apps/server/.env
+cp apps/web/.env.example    apps/web/.env.local
+```
+
+For pure UI work where you don't want to wire up Firebase, set
+`BYPASS_AUTH=1` in `apps/server/.env` and `VITE_BYPASS_AUTH=1` in
+`apps/web/.env.local`. Both must be set together or every request will 401.
+Bypass mode falls back to the legacy `TYPSY_DATA_MODE` switcher (real vs
+synthetic user). On production the bypass MUST stay off.
+
+See `apps/server/.env.example` and `apps/web/.env.example` for the full
+list of variables, including `TYPSY_OWNER_FIREBASE_UID` (links your Google
+account to the existing pre-auth practice data) and `VITE_API_BASE_URL`
+(only needed for split-deploys where the frontend lives on Vercel/Pages).
+
+## Authentication
+
+Firebase Auth (Google provider) gates every `/api/*` route except
+`/api/health`. The flow:
+
+1. Frontend signs in via `signInWithPopup(googleProvider)`, gets an ID token.
+2. Every API call includes `Authorization: Bearer <token>`
+   (attached transparently by `apps/web/src/lib/api.ts`).
+3. Server middleware (`apps/server/src/auth.ts`) verifies the token via
+   `firebase-admin`, looks up `users WHERE firebase_uid = ?`, and attaches
+   `req.userId` for downstream handlers.
+
+**First sign-in linking.** The existing pre-auth DB has a single real user
+at `id=1`. When the Firebase UID configured in `TYPSY_OWNER_FIREBASE_UID`
+signs in for the first time, the middleware stamps that UID on row 1 so
+every session/ngram already attached to it stays yours. Anyone else who
+signs in gets a fresh `INSERT INTO users` and their own user_id.
+
+**Dev shortcut.** `BYPASS_AUTH=1` on the server + `VITE_BYPASS_AUTH=1` on
+the web disables verification and falls back to the synthetic/real user
+toggle that powers `pnpm dev:synth`.
+
 ## Local vs. production database (`pnpm dev --db=...`)
 
 `pnpm dev` accepts a `--db` flag that picks which SQLite the local web app

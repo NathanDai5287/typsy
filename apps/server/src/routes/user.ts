@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import type { Router as ExpressRouter } from 'express';
 import { getDb } from '../db/client.js';
-import { getCurrentUserId } from '../db/dataMode.js';
+import { requireUserId } from '../auth.js';
 import {
   pickInitialSubset,
   type User,
@@ -39,9 +39,9 @@ function writeSettings(
   );
 }
 
-router.get('/', (_req, res) => {
+router.get('/', (req, res) => {
   const db = getDb();
-  const userId = getCurrentUserId();
+  const userId = requireUserId(req);
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as User | undefined;
   if (!user) {
     res.status(404).json({ error: 'User not found' });
@@ -114,7 +114,7 @@ router.get('/', (_req, res) => {
  */
 router.post('/active-layout', (req, res) => {
   const db = getDb();
-  const userId = getCurrentUserId();
+  const userId = requireUserId(req);
   const { layout_id } = req.body as SetActiveLayoutPayload;
 
   if (typeof layout_id !== 'number') {
@@ -139,7 +139,7 @@ router.post('/active-layout', (req, res) => {
 
 router.post('/onboarding', (req, res) => {
   const db = getDb();
-  const userId = getCurrentUserId();
+  const userId = requireUserId(req);
   const { layout_id } = req.body as OnboardingPayload;
 
   if (!layout_id || typeof layout_id !== 'number') {
@@ -195,7 +195,7 @@ router.post('/onboarding', (req, res) => {
  */
 router.post('/initial-setup', (req, res) => {
   const db = getDb();
-  const userId = getCurrentUserId();
+  const userId = requireUserId(req);
   const { daily_driver_layout_id, learn_layout_id } = req.body as InitialSetupPayload;
 
   if (typeof daily_driver_layout_id !== 'number') {
@@ -322,7 +322,7 @@ router.post('/initial-setup', (req, res) => {
  */
 router.post('/fingering', (req, res) => {
   const db = getDb();
-  const userId = getCurrentUserId();
+  const userId = requireUserId(req);
   const { fingering_map_json } = req.body as UserFingeringPayload;
 
   if (typeof fingering_map_json !== 'string') {
@@ -361,7 +361,7 @@ router.post('/fingering', (req, res) => {
  */
 router.post('/progress', (req, res) => {
   const db = getDb();
-  const userId = getCurrentUserId();
+  const userId = requireUserId(req);
   const payload = req.body as ProgressUpdatePayload;
 
   if (!payload.layout_id || typeof payload.layout_id !== 'number') {

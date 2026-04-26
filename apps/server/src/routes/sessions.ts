@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import type { Router as ExpressRouter } from 'express';
 import { getDb } from '../db/client.js';
-import { getCurrentUserId } from '../db/dataMode.js';
+import { requireUserId } from '../auth.js';
 import type { SessionPayload, Session } from '@typsy/shared';
 
 const router: ExpressRouter = Router();
@@ -9,8 +9,8 @@ const router: ExpressRouter = Router();
 router.post('/', (req, res) => {
   const db = getDb();
   // Server is the source of truth for which user the session belongs to —
-  // any user_id from the body is ignored so the FE can't write across modes.
-  const userId = getCurrentUserId();
+  // any user_id from the body is ignored so the FE can't write across users.
+  const userId = requireUserId(req);
   const payload = req.body as SessionPayload;
 
   const {
@@ -79,7 +79,7 @@ router.post('/', (req, res) => {
  */
 router.get('/', (req, res) => {
   const db = getDb();
-  const userId = getCurrentUserId();
+  const userId = requireUserId(req);
   const layoutId = Number(req.query.layout_id);
   const limit = Math.min(Number(req.query.limit ?? 200) || 200, 1000);
 

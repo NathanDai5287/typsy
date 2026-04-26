@@ -4,6 +4,9 @@ dist/
 *.db-shm
 *.db-wal
 .env
+.env.local
+.env.*.local
+firebase-service-account*.json
 data/
 
 # pnpm content-addressable store (created when CI/local dev sets store-dir to project)
