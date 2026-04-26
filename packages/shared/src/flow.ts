@@ -344,7 +344,7 @@ export function generateFlowLine({
   minLength = 4,
   maxLength = 12,
   recent,
-  recentDecay = 0.2,
+  recentDecay = 0.15,
   alpha = 1.0,
   beta = 0.5,
   delta = 0.5,
