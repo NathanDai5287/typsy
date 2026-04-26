@@ -20,7 +20,16 @@ import { getCurrentIdToken } from './auth.tsx';
 // SPA. Split-deploy (e.g. frontend on Vercel, backend on typsy.cal.taxi) sets
 // VITE_API_BASE_URL='https://typsy.cal.taxi/api' at build time. We strip a
 // trailing slash so callers can be lazy with their env values.
-const BASE = (import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') as string | undefined) ?? '/api';
+//
+// Note: `??` only falls back on null/undefined. Vite turns `VITE_API_BASE_URL=`
+// (the documented "leave blank" form in .env.example) into an empty *string*,
+// not undefined, so we have to treat the empty string as "use default" too —
+// otherwise every request would hit `/<path>` instead of `/api/<path>` and
+// vite's SPA fallback would return index.html (HTTP 200, text/html), making
+// `res.json()` throw and the SPA show "Could not connect to the server".
+// See RUNBOOK.md → "Could not connect to the server" for the full diagnosis.
+const RAW_BASE = import.meta.env.VITE_API_BASE_URL as string | undefined;
+const BASE = RAW_BASE && RAW_BASE.length > 0 ? RAW_BASE.replace(/\/$/, '') : '/api';
 
 async function request<T>(
   path: string,
