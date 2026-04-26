@@ -356,8 +356,16 @@ router.post('/fingering', (req, res) => {
 /**
  * POST /api/user/progress
  *
- * Patch unlocked_keys_json, current_mode, and/or phase for the given
- * (user, layout). Only fields present in the body are updated.
+ * Patch unlocked_keys_json, current_mode, phase, and/or is_main_layout for the
+ * given (user, layout). Only fields present in the body are updated.
+ *
+ * Special-case `is_main_layout = true`: a user has at most one daily-driver
+ * layout, so we (a) clear the flag on every other row in the same
+ * transaction, and (b) set `active_layout_id` to this layout in user
+ * settings — clicking "Mark daily driver" should be a single-action switch.
+ * `is_main_layout = false` just clears the flag on the target row; we don't
+ * touch the active layout in that case (un-marking shouldn't bounce the
+ * user off the layout they're currently typing on).
  */
 router.post('/progress', (req, res) => {
   const db = getDb();
@@ -394,23 +402,55 @@ router.post('/progress', (req, res) => {
     return;
   }
 
-  params.push(userId, payload.layout_id);
+  const layoutId = payload.layout_id;
+  const promotingToMain = payload.is_main_layout === true;
 
-  const result = db
-    .prepare(
-      `UPDATE user_layout_progress SET ${updates.join(', ')}
-       WHERE user_id = ? AND layout_id = ?`,
-    )
-    .run(...params);
+  // Existence check + side-effecting writes go in one transaction so the
+  // "clear other rows" step in the promote path can't escape if the target
+  // row turns out not to exist (which would otherwise wipe the user's only
+  // daily driver on a typo'd layout_id).
+  const NOT_FOUND = Symbol('not_found');
+  try {
+    db.transaction(() => {
+      const exists = db
+        .prepare('SELECT 1 FROM user_layout_progress WHERE user_id = ? AND layout_id = ?')
+        .get(userId, layoutId);
+      if (!exists) throw NOT_FOUND;
 
-  if (result.changes === 0) {
-    res.status(404).json({ error: 'Progress row not found' });
-    return;
+      if (promotingToMain) {
+        // Single-daily-driver invariant: clear the flag on every other row
+        // first so the UPDATE below leaves exactly one is_main_layout=1.
+        db.prepare(
+          'UPDATE user_layout_progress SET is_main_layout = 0 WHERE user_id = ? AND layout_id != ?',
+        ).run(userId, layoutId);
+      }
+
+      db.prepare(
+        `UPDATE user_layout_progress SET ${updates.join(', ')}
+         WHERE user_id = ? AND layout_id = ?`,
+      ).run(...params, userId, layoutId);
+
+      if (promotingToMain) {
+        // Auto-switch active layout. The user picked "Mark daily driver" on
+        // this layout, so jump them onto it — otherwise the practice page
+        // would still be sitting on the old layout, making the toggle look
+        // like it didn't do anything.
+        const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as User;
+        const settings = readSettings(user);
+        writeSettings(db, userId, { ...settings, active_layout_id: layoutId });
+      }
+    })();
+  } catch (err) {
+    if (err === NOT_FOUND) {
+      res.status(404).json({ error: 'Progress row not found' });
+      return;
+    }
+    throw err;
   }
 
   const row = db
     .prepare('SELECT * FROM user_layout_progress WHERE user_id = ? AND layout_id = ?')
-    .get(userId, payload.layout_id) as UserLayoutProgress;
+    .get(userId, layoutId) as UserLayoutProgress;
 
   res.json(row);
 });
