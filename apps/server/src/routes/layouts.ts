@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import type { Router as ExpressRouter } from 'express';
 import { getDb } from '../db/client.js';
-import { getCurrentUserId } from '../db/dataMode.js';
+import { requireUserId } from '../auth.js';
 import type { Layout, LayoutSummary, User, UserSettings } from '@typsy/shared';
 import { SEEDED_LAYOUT_NAMES } from '@typsy/shared';
 
@@ -92,7 +92,7 @@ router.delete('/:id', (req, res) => {
   }
 
   // Read user settings to detect "was this the active layout?"
-  const userId = getCurrentUserId();
+  const userId = requireUserId(req);
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as User | undefined;
   let settings: UserSettings = {};
   if (user) {
@@ -137,9 +137,9 @@ router.delete('/:id', (req, res) => {
  * Per-layout snapshot used by the /layouts page: name, progression status,
  * total chars, last WPM, etc. Includes layouts the user hasn't onboarded yet.
  */
-router.get('/summary', (_req, res) => {
+router.get('/summary', (req, res) => {
   const db = getDb();
-  const userId = getCurrentUserId();
+  const userId = requireUserId(req);
 
   const rows = db
     .prepare(

@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { fetchUser } from './lib/api.ts';
+import { useAuth } from './lib/auth.tsx';
 import Nav from './components/Nav.tsx';
 import StatusBar from './components/StatusBar.tsx';
 import HelpOverlay from './components/HelpOverlay.tsx';
@@ -13,6 +14,7 @@ import OptimizePage from './pages/OptimizePage.tsx';
 import LayoutsPage from './pages/LayoutsPage.tsx';
 import FingeringPage from './pages/FingeringPage.tsx';
 import SettingsPage from './pages/SettingsPage.tsx';
+import LoginPage from './pages/LoginPage.tsx';
 
 /**
  * Top-level shell.
@@ -20,12 +22,33 @@ import SettingsPage from './pages/SettingsPage.tsx';
  * Layout is a single column: nav (top), main (scrollable), status bar
  * (bottom). The keymap provider wraps everything so any descendant can
  * register page-level shortcuts and they show up in the help overlay.
+ *
+ * Auth gate: while Firebase resolves the auth state we show a loading
+ * splash; if no user is signed in (and we aren't in BYPASS_AUTH dev mode)
+ * we render LoginPage instead of the app shell. Only after a verified
+ * sign-in do we issue the /api/user fetch.
  */
 export default function App(): JSX.Element {
+  const { user, loading: authLoading, bypassed } = useAuth();
+  const signedIn = bypassed || !!user;
+
   const { data, isLoading, isError } = useQuery({
     queryKey: ['user'],
     queryFn: fetchUser,
+    enabled: signedIn,
   });
+
+  if (authLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center text-fg3 font-mono">
+        signing in…
+      </div>
+    );
+  }
+
+  if (!signedIn) {
+    return <LoginPage />;
+  }
 
   if (isLoading) {
     return (

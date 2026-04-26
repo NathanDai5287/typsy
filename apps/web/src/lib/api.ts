@@ -14,17 +14,31 @@ import type {
   UserLayoutProgress,
   SetActiveLayoutPayload,
 } from '@typsy/shared';
+import { getCurrentIdToken } from './auth.tsx';
 
-const BASE = '/api';
+// Single-origin (default) → '/api' resolves against whatever host served the
+// SPA. Split-deploy (e.g. frontend on Vercel, backend on typsy.cal.taxi) sets
+// VITE_API_BASE_URL='https://typsy.cal.taxi/api' at build time. We strip a
+// trailing slash so callers can be lazy with their env values.
+const BASE = (import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') as string | undefined) ?? '/api';
 
 async function request<T>(
   path: string,
   options?: RequestInit,
 ): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...((options?.headers as Record<string, string> | undefined) ?? {}),
+  };
+
+  // Attach a fresh Firebase ID token if the user is signed in. In
+  // BYPASS_AUTH dev mode (server reads userId from TYPSY_DATA_MODE env),
+  // getCurrentIdToken() returns null and we send the request without an
+  // Authorization header — the server's bypass branch handles it.
+  const token = await getCurrentIdToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(`${BASE}${path}`, { ...options, headers });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(`${res.status} ${res.statusText}${body ? `: ${body}` : ''}`);

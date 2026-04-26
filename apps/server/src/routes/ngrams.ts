@@ -1,14 +1,14 @@
 import { Router } from 'express';
 import type { Router as ExpressRouter } from 'express';
 import { getDb } from '../db/client.js';
-import { getCurrentUserId } from '../db/dataMode.js';
+import { requireUserId } from '../auth.js';
 import type { NgramBatchPayload, NgramStat } from '@typsy/shared';
 
 const router: ExpressRouter = Router();
 
 router.post('/batch', (req, res) => {
   const db = getDb();
-  const userId = getCurrentUserId();
+  const userId = requireUserId(req);
   const { layout_id, deltas } = req.body as NgramBatchPayload;
 
   if (!layout_id || !Array.isArray(deltas) || deltas.length === 0) {
@@ -56,7 +56,7 @@ router.post('/batch', (req, res) => {
  */
 router.get('/stats', (req, res) => {
   const db = getDb();
-  const userId = getCurrentUserId();
+  const userId = requireUserId(req);
   const layoutId = Number(req.query.layout_id);
   const type = typeof req.query.type === 'string' ? req.query.type : undefined;
 
