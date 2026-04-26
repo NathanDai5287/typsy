@@ -2,7 +2,7 @@
 
 # Typsy — Keyboard Layout Trainer
 
-A keyboard-navigable web app for learning new keyboard layouts. Currently supports QWERTY, Colemak, and Graphite.
+A keyboard-navigable web app for learning new keyboard layouts. Currently supports QWERTY, Colemak, Colemak DH, Graphite, Dvorak, Workman, and Canary.
 
 ## Setup
 
