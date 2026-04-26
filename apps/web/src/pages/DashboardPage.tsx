@@ -320,7 +320,8 @@ export default function DashboardPage(): JSX.Element {
       <section className="panel p-4">
         <PanelHeading>weakness heatmap</PanelHeading>
         <p className="text-[11px] text-fg4 mb-3">
-          dot color shows error rate per key (green clean → red high-error)
+          dot color is each key's smoothed error rate, scaled so your worst
+          key always shows some red (deep red when it's clearly an outlier)
         </p>
         <KeyboardVisual
           positions={positions}

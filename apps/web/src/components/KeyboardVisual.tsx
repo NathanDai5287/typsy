@@ -58,6 +58,13 @@ export default function KeyboardVisual({
   const gapPx = compact ? 2 : 4;
   const fontSize = compact ? 11 : 14;
 
+  // Stretch the heat scale so the worst key always reaches at least the
+  // "slightly red" threshold. With Bayesian smoothing the raw error rates
+  // sit well below 0.5 even on shaky keys, so an unscaled gradient renders
+  // every key near-green. When the worst key is already past the floor
+  // (genuinely bad), no rescaling kicks in. See `scaleHeatForDisplay`.
+  const heatScale = scaleHeatForDisplay(heat);
+
   return (
     <div className="select-none" aria-hidden>
       {rows.map((row, ri) => (
@@ -84,7 +91,9 @@ export default function KeyboardVisual({
             const fade = Math.min(1, hits / 500) * fadeStrength;
             const opacity = isUnlocked ? Math.max(0.3, 1 - 0.7 * fade) : 0.25;
 
-            const heatPct = heat?.get(pos.char);
+            const heatRaw = heat?.get(pos.char);
+            const heatPct =
+              heatRaw !== undefined ? Math.min(1, heatRaw * heatScale) : undefined;
             const ringClass = isNext
               ? 'ring-1 ring-yellow-400'
               : '';
@@ -142,6 +151,37 @@ export default function KeyboardVisual({
       ))}
     </div>
   );
+}
+
+/**
+ * Visual floor for the worst key on the green→yellow→red gradient.
+ * 0.0 = green, 0.5 = yellow, 1.0 = red — so 0.6 is "yellow nudged toward
+ * orange", reading as slightly red without overstating the problem.
+ */
+const MIN_WORST_DISPLAY = 0.6;
+
+/**
+ * Display-time multiplier applied to raw heat values so the worst key
+ * always reaches at least `MIN_WORST_DISPLAY` on the green→red gradient
+ * (~slightly red). When the worst key already sits above the floor
+ * (genuinely high error rate), the multiplier is 1 and absolute scaling
+ * takes over so a clear weak spot still renders deep red.
+ *
+ * Returns 1 when there's no heat data — callers should treat
+ * `displayHeat = rate * scale` (clamped to [0, 1]) as the value to feed
+ * into the gradient.
+ */
+export function scaleHeatForDisplay(
+  heat: ReadonlyMap<string, number> | undefined,
+  minWorstDisplay = MIN_WORST_DISPLAY,
+): number {
+  if (!heat || heat.size === 0) return 1;
+  let max = 0;
+  for (const v of heat.values()) {
+    if (v > max) max = v;
+  }
+  if (max <= 0) return 1;
+  return Math.max(1, minWorstDisplay / max);
 }
 
 /** Map an error rate 0..1 to a Gruvbox-tinted green→yellow→red color. */
