@@ -195,6 +195,13 @@ export default function PracticePage(): JSX.Element {
     }
   }, [mode, activeProgress, updateProgress]);
 
+  // Stable serialized key of unlocked set contents — used as effect dependency
+  // so text regenerates whenever the set changes (size OR membership).
+  const unlockedKey = useMemo(
+    () => Array.from(unlockedSet).sort().join(','),
+    [unlockedSet],
+  );
+
   // ─── Manual unlock/lock controls ─────────────────────────────────────────
   const layoutAlphaChars = useMemo(
     () => positions.filter((p) => /^[a-z]$/.test(p.char)),
@@ -313,7 +320,12 @@ export default function PracticePage(): JSX.Element {
     if (!sentence && activeProgress && unlockedSet.size > 0 && ngramRows) {
       resetSession();
     }
-  }, [activeProgress, unlockedSet.size, ngramRows, sentence, resetSession]);
+  }, [activeProgress, unlockedKey, ngramRows, sentence, resetSession]);
+
+  useEffect(() => {
+    if (sentence) resetSession();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unlockedKey]);
 
   useEffect(() => {
     if (sentence) resetSession();
