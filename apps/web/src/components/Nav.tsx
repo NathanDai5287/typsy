@@ -22,8 +22,10 @@ const links: { to: string; label: string; shortcut: string; end?: boolean }[] = 
  * Highlight the shortcut letter inside a label. We split on the first
  * occurrence (case-insensitive) so e.g. "practice" + "p" renders as
  * `[P]ractice` with the bracketed letter receiving the accent color.
+ * When the link is active (inverted: yellow bg, dark text) we don't apply
+ * the yellow accent so the letter stays visible instead of blending in.
  */
-function renderLabel(label: string, shortcut: string): JSX.Element {
+function renderLabel(label: string, shortcut: string, isActive: boolean): JSX.Element {
   const idx = label.toLowerCase().indexOf(shortcut.toLowerCase());
   if (idx < 0) {
     return <span>{label}</span>;
@@ -31,7 +33,7 @@ function renderLabel(label: string, shortcut: string): JSX.Element {
   return (
     <>
       <span>{label.slice(0, idx)}</span>
-      <span className="text-yellow-400">{label[idx]}</span>
+      <span className={isActive ? 'font-bold' : 'text-yellow-400'}>{label[idx]}</span>
       <span>{label.slice(idx + 1)}</span>
     </>
   );
@@ -60,7 +62,7 @@ export default function Nav(): JSX.Element {
           }
           title={`Shift+${shortcut.toUpperCase()} or g ${shortcut}`}
         >
-          {renderLabel(label, shortcut)}
+          {({ isActive }) => renderLabel(label, shortcut, isActive)}
         </NavLink>
       ))}
     </nav>
