@@ -114,14 +114,20 @@ export function nextKeyToUnlock(
 }
 
 /**
- * Returns the most recently unlocked character — i.e. the last key that was
- * added according to the COL_PRIORITY/ROW_PRIORITY order — or null if fewer
- * than two keys are unlocked (we never lock down to zero or one; the initial
- * subset should always remain). This is the character that would be removed by
- * a manual "lock one back" control.
+ * Returns the key that should be locked when the user presses "−" — the exact
+ * inverse of nextKeyToUnlock / the + button.
  *
- * The function walks the unlock order and returns the LAST character in
- * `unlocked` that appears in that traversal order.
+ * Strategy: walk the priority sequence and find the longest contiguous prefix
+ * where every key is present in `unlocked`. The last key of that prefix is the
+ * one that + would have added most recently, so − removes it.
+ *
+ * This makes + and − true inverses: pressing + then − always restores the
+ * previous state, regardless of how the initial subset was chosen.
+ *
+ * Returns null if fewer than two keys are unlocked (we never lock below 1) or
+ * if no key in `unlocked` appears at the start of the priority sequence (e.g.
+ * the initial subset contains none of the highest-priority keys, which
+ * shouldn't happen in practice).
  */
 export function lastKeyToLock(
   unlocked: readonly string[],
@@ -129,14 +135,22 @@ export function lastKeyToLock(
 ): string | null {
   if (unlocked.length <= 1) return null;
   const have = new Set(unlocked);
-  let last: string | null = null;
+  // Build the full priority sequence once
+  const sequence: string[] = [];
   for (const row of ROW_PRIORITY) {
     for (const col of COL_PRIORITY) {
       const key = layoutChars.find(
-        (k) => k.row === row && k.col === col && /^[a-z]$/.test(k.char) && have.has(k.char),
+        (k) => k.row === row && k.col === col && /^[a-z]$/.test(k.char),
       );
-      if (key) last = key.char;
+      if (key) sequence.push(key.char);
     }
+  }
+  // Walk the sequence and track the last key seen before the first gap.
+  // This is the frontier key that + would have added most recently.
+  let last: string | null = null;
+  for (const char of sequence) {
+    if (!have.has(char)) break; // gap — stop here
+    last = char;
   }
   return last;
 }
