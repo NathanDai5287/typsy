@@ -97,3 +97,46 @@ function pickNextKey(
   }
   return null;
 }
+
+// ─── Manual unlock/lock helpers ────────────────────────────────────────────
+
+/**
+ * Returns the next character that would be unlocked from the layout (same
+ * priority order as the automatic unlock), or null if all alpha keys are
+ * already unlocked. Useful for offering the user a manual "unlock one more"
+ * control.
+ */
+export function nextKeyToUnlock(
+  unlocked: readonly string[],
+  layoutChars: readonly { char: string; row: number; col: number }[],
+): string | null {
+  return pickNextKey(unlocked, layoutChars);
+}
+
+/**
+ * Returns the most recently unlocked character — i.e. the last key that was
+ * added according to the COL_PRIORITY/ROW_PRIORITY order — or null if fewer
+ * than two keys are unlocked (we never lock down to zero or one; the initial
+ * subset should always remain). This is the character that would be removed by
+ * a manual "lock one back" control.
+ *
+ * The function walks the unlock order and returns the LAST character in
+ * `unlocked` that appears in that traversal order.
+ */
+export function lastKeyToLock(
+  unlocked: readonly string[],
+  layoutChars: readonly { char: string; row: number; col: number }[],
+): string | null {
+  if (unlocked.length <= 1) return null;
+  const have = new Set(unlocked);
+  let last: string | null = null;
+  for (const row of ROW_PRIORITY) {
+    for (const col of COL_PRIORITY) {
+      const key = layoutChars.find(
+        (k) => k.row === row && k.col === col && /^[a-z]$/.test(k.char) && have.has(k.char),
+      );
+      if (key) last = key.char;
+    }
+  }
+  return last;
+}

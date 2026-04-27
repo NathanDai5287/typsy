@@ -17,6 +17,8 @@ import {
   indexNgramStats,
   computeKeyHealth,
   shouldUnlockNextKey,
+  nextKeyToUnlock,
+  lastKeyToLock,
 } from '@typsy/shared';
 import type { KeyPosition, NgramStat, FingerLabel } from '@typsy/shared';
 import KeyboardVisual from '../components/KeyboardVisual.tsx';
@@ -192,6 +194,56 @@ export default function PracticePage(): JSX.Element {
       });
     }
   }, [mode, activeProgress, updateProgress]);
+
+  // ─── Manual unlock/lock controls ─────────────────────────────────────────
+  const layoutAlphaChars = useMemo(
+    () => positions.filter((p) => /^[a-z]$/.test(p.char)),
+    [positions],
+  );
+
+  const applyUnlockedChange = useCallback(
+    async (next: string[]) => {
+      if (!activeProgress) return;
+      await postProgressUpdate({
+        layout_id: activeProgress.layout_id,
+        unlocked_keys_json: JSON.stringify(next.sort()),
+      });
+      void queryClient.invalidateQueries({ queryKey: ['user'] });
+    },
+    [activeProgress, queryClient],
+  );
+
+  const handleUnlockNext = useCallback(async () => {
+    if (!activeProgress || isMainLayout) return;
+    const unlockedArr = Array.from(unlockedSet);
+    const next = nextKeyToUnlock(unlockedArr, layoutAlphaChars);
+    if (!next) return;
+    await applyUnlockedChange([...unlockedArr, next]);
+  }, [activeProgress, isMainLayout, unlockedSet, layoutAlphaChars, applyUnlockedChange]);
+
+  const handleLockLast = useCallback(async () => {
+    if (!activeProgress || isMainLayout) return;
+    const unlockedArr = Array.from(unlockedSet);
+    const toRemove = lastKeyToLock(unlockedArr, layoutAlphaChars);
+    if (!toRemove) return;
+    await applyUnlockedChange(unlockedArr.filter((c) => c !== toRemove));
+  }, [activeProgress, isMainLayout, unlockedSet, layoutAlphaChars, applyUnlockedChange]);
+
+  const handleToggleKey = useCallback(
+    async (char: string) => {
+      if (!activeProgress || isMainLayout) return;
+      const unlockedArr = Array.from(unlockedSet);
+      const isUnlocked = unlockedSet.has(char);
+      if (isUnlocked) {
+        // Don't allow locking if it's the only key
+        if (unlockedArr.length <= 1) return;
+        await applyUnlockedChange(unlockedArr.filter((c) => c !== char));
+      } else {
+        await applyUnlockedChange([...unlockedArr, char]);
+      }
+    },
+    [activeProgress, isMainLayout, unlockedSet, applyUnlockedChange],
+  );
 
   // ─── Session state ───────────────────────────────────────────────────────
   const [sentence, setSentence] = useState('');
@@ -528,9 +580,14 @@ export default function PracticePage(): JSX.Element {
           {isMainLayout ? (
             <span className="text-fg3">daily driver</span>
           ) : (
-            <span className="text-fg3">
-              {unlockedSet.size}/{totalAlpha} unlocked
-            </span>
+            <UnlockControls
+              unlockedSet={unlockedSet}
+              layoutAlphaChars={layoutAlphaChars}
+              totalAlpha={totalAlpha}
+              onUnlockNext={handleUnlockNext}
+              onLockLast={handleLockLast}
+              onToggleKey={handleToggleKey}
+            />
           )}
         </div>
         <div className="flex gap-5">
@@ -657,5 +714,126 @@ function Stat({ label, value }: { label: string; value: string | number }) {
       </div>
       <div className="text-[10px] text-fg4 uppercase tracking-widest mt-0.5">{label}</div>
     </div>
+  );
+}
+
+// ─── UnlockControls ──────────────────────────────────────────────────────────
+
+interface UnlockControlsProps {
+  unlockedSet: ReadonlySet<string>;
+  layoutAlphaChars: readonly { char: string; row: number; col: number }[];
+  totalAlpha: number;
+  onUnlockNext: () => void;
+  onLockLast: () => void;
+  onToggleKey: (char: string) => void;
+}
+
+function UnlockControls({
+  unlockedSet,
+  layoutAlphaChars,
+  totalAlpha,
+  onUnlockNext,
+  onLockLast,
+  onToggleKey,
+}: UnlockControlsProps) {
+  const [showPicker, setShowPicker] = useState(false);
+
+  const canUnlockMore = unlockedSet.size < totalAlpha;
+  const canLockBack = unlockedSet.size > 1;
+
+  // Sort all alpha chars in unlock order (ROW_PRIORITY × COL_PRIORITY) for the picker
+  const COL_PRIORITY_LOCAL = [3, 4, 2, 5, 1, 6, 0, 7, 8, 9];
+  const ROW_PRIORITY_LOCAL = [1, 0, 2];
+  const orderedChars: string[] = [];
+  for (const row of ROW_PRIORITY_LOCAL) {
+    for (const col of COL_PRIORITY_LOCAL) {
+      const key = layoutAlphaChars.find((k) => k.row === row && k.col === col);
+      if (key) orderedChars.push(key.char);
+    }
+  }
+
+  return (
+    <span className="relative inline-flex items-center gap-1">
+      {/* Decrement — lock back one key */}
+      <button
+        type="button"
+        title="Lock last unlocked key"
+        onClick={onLockLast}
+        disabled={!canLockBack}
+        className={[
+          'w-5 h-5 flex items-center justify-center border font-mono text-xs leading-none focus-visible:outline-none focus-visible:border-yellow-400',
+          canLockBack
+            ? 'border-bg4 text-fg2 hover:text-fg_h hover:border-fg4'
+            : 'border-bg3 text-fg4 opacity-40 cursor-not-allowed',
+        ].join(' ')}
+      >
+        −
+      </button>
+
+      {/* Count — click to open key picker */}
+      <button
+        type="button"
+        title="Pick which keys are unlocked"
+        onClick={() => setShowPicker((v) => !v)}
+        className="px-1 font-mono text-xs text-fg3 hover:text-fg_h focus-visible:outline-none focus-visible:text-yellow-400"
+      >
+        {unlockedSet.size}/{totalAlpha}
+      </button>
+
+      {/* Increment — unlock next key */}
+      <button
+        type="button"
+        title="Unlock next key"
+        onClick={onUnlockNext}
+        disabled={!canUnlockMore}
+        className={[
+          'w-5 h-5 flex items-center justify-center border font-mono text-xs leading-none focus-visible:outline-none focus-visible:border-yellow-400',
+          canUnlockMore
+            ? 'border-bg4 text-fg2 hover:text-fg_h hover:border-fg4'
+            : 'border-bg3 text-fg4 opacity-40 cursor-not-allowed',
+        ].join(' ')}
+      >
+        +
+      </button>
+
+      {/* Key picker popover */}
+      {showPicker && (
+        <div className="absolute top-full left-0 mt-1 z-40 panel p-2 flex flex-wrap gap-1 w-48">
+          {orderedChars.map((char) => {
+            const isUnlocked = unlockedSet.has(char);
+            const isLast = isUnlocked && unlockedSet.size === 1;
+            return (
+              <button
+                key={char}
+                type="button"
+                title={isUnlocked ? `Lock '${char}'` : `Unlock '${char}'`}
+                onClick={() => {
+                  onToggleKey(char);
+                  // Don't close picker — let user make multiple changes
+                }}
+                disabled={isLast}
+                className={[
+                  'w-7 h-7 flex items-center justify-center border font-mono text-xs focus-visible:outline-none focus-visible:border-yellow-400',
+                  isLast
+                    ? 'border-bg3 text-fg4 opacity-40 cursor-not-allowed'
+                    : isUnlocked
+                      ? 'bg-yellow-400 text-bg_h border-yellow-400 hover:bg-yellow-300'
+                      : 'border-bg4 text-fg3 hover:text-fg_h hover:border-fg4',
+                ].join(' ')}
+              >
+                {char}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => setShowPicker(false)}
+            className="w-full mt-1 text-center text-fg4 text-xs hover:text-fg_h focus-visible:outline-none"
+          >
+            close
+          </button>
+        </div>
+      )}
+    </span>
   );
 }
