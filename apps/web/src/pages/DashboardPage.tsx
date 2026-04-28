@@ -126,31 +126,34 @@ export default function DashboardPage(): JSX.Element {
   );
   const sfb = useMemo(() => sfbRate(ngramRows ?? [], fingerMap), [ngramRows, fingerMap]);
   const heatmap = useMemo(() => buildErrorHeatmap(ngramRows ?? []), [ngramRows]);
-  const topChars = useMemo(
-    () => topWeakNgrams(ngramRows ?? [], 'char2', 10),
-    [ngramRows],
-  );
-  const slowChars = useMemo(
-    () => topSlowNgrams(ngramRows ?? [], 'char2', 10),
-    [ngramRows],
-  );
+  const topChars = useMemo(() => {
+    const rows = topWeakNgrams(ngramRows ?? [], 'char2', 10);
+    // Exclude whitespace bigrams like "r " which can appear as single chars or empty
+    // in HTML due to whitespace collapsing.
+    return rows.filter((r) => r.ngram.length === 2 && !/\s/.test(r.ngram));
+  }, [ngramRows]);
+
+  const slowChars = useMemo(() => {
+    const rows = topSlowNgrams(ngramRows ?? [], 'char2', 10);
+    // Exclude whitespace bigrams like "r " which can appear as single chars or empty
+    // in HTML due to whitespace collapsing.
+    return rows.filter((r) => r.ngram.length === 2 && !/\s/.test(r.ngram));
+  }, [ngramRows]);
   const topWords = useMemo(
     () => topWeakNgrams(ngramRows ?? [], 'word1', 10),
     [ngramRows],
   );
 
-  // Compute word context for slow bigrams
-  const slowBigramWords = useMemo(
-    () =>
-      slowChars.reduce(
-        (acc, bigram) => {
-          acc[bigram.ngram] = findWordsWithBigram(ngramRows ?? [], bigram.ngram, 3);
-          return acc;
-        },
-        {} as Record<string, Array<{ word: string; hits: number; misses: number; errorRate: number }>>,
-      ),
-    [slowChars, ngramRows],
-  );
+  // Compute word context for slow bigrams (for hover tooltip)
+  const slowBigramWords = useMemo(() => {
+    return slowChars.reduce(
+      (acc, bigram) => {
+        acc[bigram.ngram] = findWordsWithBigram(ngramRows ?? [], bigram.ngram, 5);
+        return acc;
+      },
+      {} as Record<string, Array<{ word: string; hits: number; misses: number; errorRate: number }>>,
+    );
+  }, [slowChars, ngramRows]);
 
   const streak = useMemo(() => dayStreak(sessions ?? []), [sessions]);
   const totalChars = useMemo(() => totalCharsTyped(sessions ?? []), [sessions]);
@@ -450,15 +453,13 @@ function NgramTable({
           <tbody>
             {rows.map(([k, v, attempts]) => {
               const words = wordContext?.[k];
+              const hoverText = words?.length
+                ? `missed in: ${words.map((w) => w.word).join(', ')}`
+                : undefined;
               return (
                 <tr key={k} className="border-t border-bg4">
                   <td className="py-1 text-fg_h">
-                    {k}
-                    {words && words.length > 0 && (
-                      <div className="text-[10px] text-fg4 mt-0.5">
-                        in: {words.map((w) => w.word).join(', ')}
-                      </div>
-                    )}
+                    <span title={hoverText}>{k}</span>
                   </td>
                   <td className={`py-1 tabular-nums ${accentClass}`}>{v}</td>
                   <td className="py-1 text-right tabular-nums text-fg3">{attempts}</td>
