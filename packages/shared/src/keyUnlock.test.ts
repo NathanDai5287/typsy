@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeKeyHealth, shouldUnlockNextKey, keysNeedingReview, nextKeyToUnlock, lastKeyToLock } from './keyUnlock.js';
+import { computeKeyHealth, shouldUnlockNextKey, keysNeedingReview, nextKeyToUnlock } from './keyUnlock.js';
 import { indexNgramStats, type NgramStatRow } from './ngramStats.js';
 import { LAYOUT_DEFINITIONS } from './layouts.js';
 import type { KeyPosition } from './types.js';
@@ -79,18 +79,6 @@ describe('nextKeyToUnlock', () => {
   it('returns null when all alpha keys are unlocked', () => {
     const all = colemakChars().filter((k) => /^[a-z]$/.test(k.char)).map((k) => k.char);
     expect(nextKeyToUnlock(all, colemakChars())).toBeNull();
-  });
-});
-
-describe('lastKeyToLock', () => {
-  it('returns the most recently added key in priority order', () => {
-    // With ['t', 'd'] unlocked the last in priority order is 'd' (col 4 comes after col 3)
-    const last = lastKeyToLock(['t', 'd'], colemakChars());
-    expect(last).toBe('d');
-  });
-
-  it('returns null when only one key is unlocked', () => {
-    expect(lastKeyToLock(['t'], colemakChars())).toBeNull();
   });
 });
 

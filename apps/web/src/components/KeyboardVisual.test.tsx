@@ -1,5 +1,42 @@
-import { describe, it, expect } from 'vitest';
-import { scaleHeatForDisplay } from './KeyboardVisual.tsx';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, cleanup, fireEvent } from '@testing-library/react';
+import type { KeyPosition } from '@typsy/shared';
+import KeyboardVisual, { scaleHeatForDisplay } from './KeyboardVisual.tsx';
+
+afterEach(() => cleanup());
+
+const TINY_LAYOUT: KeyPosition[] = [
+  { char: 'a', row: 1, col: 0, finger: 'left_pinky' },
+  { char: 's', row: 1, col: 1, finger: 'left_ring' },
+];
+
+describe('KeyboardVisual onKeyClick', () => {
+  it('renders keys as buttons that call onKeyClick with the char', () => {
+    const onKeyClick = vi.fn();
+    const { getByText } = render(
+      <KeyboardVisual positions={TINY_LAYOUT} onKeyClick={onKeyClick} />,
+    );
+    fireEvent.click(getByText('a'));
+    expect(onKeyClick).toHaveBeenCalledWith('a');
+    fireEvent.click(getByText('s'));
+    expect(onKeyClick).toHaveBeenCalledWith('s');
+  });
+
+  it('applies cursor-pointer + hover-scale classes when interactive', () => {
+    const { getByText } = render(
+      <KeyboardVisual positions={TINY_LAYOUT} onKeyClick={() => {}} />,
+    );
+    const btn = getByText('a').closest('button')!;
+    expect(btn).not.toBeNull();
+    expect(btn.className).toMatch(/cursor-pointer/);
+    expect(btn.className).toMatch(/hover:scale-110/);
+  });
+
+  it('renders keys as non-interactive divs when onKeyClick is omitted', () => {
+    const { getByText } = render(<KeyboardVisual positions={TINY_LAYOUT} />);
+    expect(getByText('a').closest('button')).toBeNull();
+  });
+});
 
 describe('scaleHeatForDisplay', () => {
   it('returns 1 (no rescaling) when heat is undefined or empty', () => {
