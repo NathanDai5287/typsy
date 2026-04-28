@@ -20,7 +20,7 @@ import {
 } from '@typsy/shared';
 import type { FingerLabel, KeyPosition } from '@typsy/shared';
 import KeyboardVisual from '../components/KeyboardVisual.tsx';
-import { FINGER_HEX } from '../lib/finger-colors.ts';
+import { FINGER_DISPLAY, FINGER_HEX } from '../lib/finger-colors.ts';
 import {
   Bar,
   BarChart,
@@ -298,13 +298,28 @@ export default function DashboardPage(): JSX.Element {
             />
             <YAxis stroke={CHART.axis} fontSize={10} />
             <Tooltip
-              contentStyle={TOOLTIP_STYLE}
-              formatter={(v: number, _k, p) => {
-                const a = p?.payload?.accuracy as number | undefined;
-                return [
-                  `${v.toFixed(1)} WPM${a !== undefined ? ` · ${(a * 100).toFixed(0)}% acc` : ''}`,
-                  String(p?.payload?.finger ?? '').replace(/_/g, ' '),
-                ];
+              cursor={{ fill: 'rgba(255,255,255,0.04)' }}
+              content={({ active, payload }) => {
+                if (!active || !payload?.[0]) return null;
+                const d = payload[0].payload as { finger: FingerLabel; wpm: number; accuracy?: number };
+                return (
+                  <div
+                    style={TOOLTIP_STYLE}
+                    className="rounded px-2.5 py-1.5"
+                  >
+                    <span style={{ color: FINGER_HEX[d.finger] }}>
+                      {FINGER_DISPLAY[d.finger]}
+                    </span>
+                    <span className="text-fg1 ml-2">
+                      {d.wpm.toFixed(1)} wpm
+                    </span>
+                    {d.accuracy !== undefined && (
+                      <span className="text-fg3 ml-1.5">
+                        · {(d.accuracy * 100).toFixed(0)}%
+                      </span>
+                    )}
+                  </div>
+                );
               }}
             />
             <Bar dataKey="wpm">
