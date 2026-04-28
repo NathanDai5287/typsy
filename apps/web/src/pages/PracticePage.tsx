@@ -22,7 +22,7 @@ import {
 import type { KeyPosition, NgramStat, FingerLabel } from '@typsy/shared';
 import KeyboardVisual from '../components/KeyboardVisual.tsx';
 import { useRegisterPageKeymap } from '../lib/keymapContext.tsx';
-import type { Keybinding } from '../lib/keymap.ts';
+import type { Keybinding, Modifier } from '../lib/keymap.ts';
 
 type Mode = 'drill' | 'flow';
 type CharState = 'pending' | 'correct' | 'wrong';
@@ -502,8 +502,21 @@ export default function PracticePage(): JSX.Element {
         description: 'Show / hide on-screen keyboard',
         handler: () => setShowKeyboard((v) => !v),
       },
+      {
+        id: 'practice.unlock-next',
+        code: 'Equal',
+        modifiers: new Set<Modifier>(['shift']),
+        description: 'Unlock next key',
+        handler: () => void handleUnlockNext(),
+      },
+      {
+        id: 'practice.lock-last',
+        code: 'Minus',
+        description: 'Lock most recently unlocked key',
+        handler: () => void handleLockLast(),
+      },
     ],
-    [endSession, changeMode, mode],
+    [endSession, changeMode, mode, handleUnlockNext, handleLockLast],
   );
   useRegisterPageKeymap('Practice', pageBindings);
 
@@ -707,7 +720,8 @@ export default function PracticePage(): JSX.Element {
       {/* Hint line */}
       <p className="mt-6 text-xs text-fg4">
         type freely · <kbd className="kbd">Esc</kbd> end · <kbd className="kbd">Tab</kbd> mode ·{' '}
-        <kbd className="kbd">\</kbd> keyboard · <kbd className="kbd">?</kbd> help
+        <kbd className="kbd">\</kbd> keyboard · <kbd className="kbd">+</kbd>/<kbd className="kbd">−</kbd> unlock ·{' '}
+        <kbd className="kbd">?</kbd> help
       </p>
     </div>
   );
