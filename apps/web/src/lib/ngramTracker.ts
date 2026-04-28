@@ -7,6 +7,7 @@ type DeltaEntry = { hits: number; misses: number; totalTimeMs: number };
 export class NgramTracker {
   private charRing: string[] = [];
   private currentWord = '';
+  private currentWordHadError = false;
   private prevWord = '';
   private deltas = new Map<string, DeltaEntry>();
   private flushTimer: ReturnType<typeof setInterval> | null = null;
@@ -48,14 +49,20 @@ export class NgramTracker {
     // Word-level tracking
     if (expectedChar === ' ') {
       if (this.currentWord) {
-        this.addDelta(`word1:${this.currentWord}`, hit, timeSinceLastMs);
+        const wordHit = hit && !this.currentWordHadError;
+        this.addDelta(`word1:${this.currentWord}`, wordHit, timeSinceLastMs);
         if (this.prevWord) {
-          this.addDelta(`word2:${this.prevWord} ${this.currentWord}`, hit, timeSinceLastMs);
+          this.addDelta(`word2:${this.prevWord} ${this.currentWord}`, wordHit, timeSinceLastMs);
         }
         this.prevWord = this.currentWord;
         this.currentWord = '';
+        this.currentWordHadError = false;
       }
     } else {
+      if (!hit) {
+        this.currentWordHadError = true;
+        return;
+      }
       this.currentWord += expectedChar;
     }
   }
@@ -63,12 +70,14 @@ export class NgramTracker {
   /** Flush any remaining word at session end (last word before sentence ends). */
   finalizeWord(): void {
     if (this.currentWord) {
-      this.addDelta(`word1:${this.currentWord}`, true, 0);
+      const wordHit = !this.currentWordHadError;
+      this.addDelta(`word1:${this.currentWord}`, wordHit, 0);
       if (this.prevWord) {
-        this.addDelta(`word2:${this.prevWord} ${this.currentWord}`, true, 0);
+        this.addDelta(`word2:${this.prevWord} ${this.currentWord}`, wordHit, 0);
       }
       this.prevWord = this.currentWord;
       this.currentWord = '';
+      this.currentWordHadError = false;
     }
   }
 
