@@ -11,6 +11,7 @@ import {
   buildErrorHeatmap,
   buildFingerMap,
   dayStreak,
+  findWordsWithBigram,
   perFingerStats,
   sessionsAsSeries,
   sfbRate,
@@ -136,6 +137,19 @@ export default function DashboardPage(): JSX.Element {
   const topWords = useMemo(
     () => topWeakNgrams(ngramRows ?? [], 'word1', 10),
     [ngramRows],
+  );
+
+  // Compute word context for slow bigrams
+  const slowBigramWords = useMemo(
+    () =>
+      slowChars.reduce(
+        (acc, bigram) => {
+          acc[bigram.ngram] = findWordsWithBigram(ngramRows ?? [], bigram.ngram, 3);
+          return acc;
+        },
+        {} as Record<string, Array<{ word: string; hits: number; misses: number; errorRate: number }>>,
+      ),
+    [slowChars, ngramRows],
   );
 
   const streak = useMemo(() => dayStreak(sessions ?? []), [sessions]);
@@ -358,6 +372,7 @@ export default function DashboardPage(): JSX.Element {
           rows={slowChars.map((n) => [n.ngram, n.wpm.toFixed(1), n.hits + n.misses])}
           headers={['bigram', 'wpm', 'attempts']}
           accentClass="text-orange-400"
+          wordContext={slowBigramWords}
         />
         <NgramTable
           title="top 10 weak words"
@@ -410,11 +425,13 @@ function NgramTable({
   headers,
   rows,
   accentClass,
+  wordContext,
 }: {
   title: string;
   headers: readonly [string, string, string];
   rows: readonly (readonly [string, string, number])[];
   accentClass: string;
+  wordContext?: Record<string, Array<{ word: string; hits: number; misses: number; errorRate: number }>>;
 }): JSX.Element {
   return (
     <section className="panel p-4">
@@ -431,13 +448,23 @@ function NgramTable({
             </tr>
           </thead>
           <tbody>
-            {rows.map(([k, v, attempts]) => (
-              <tr key={k} className="border-t border-bg4">
-                <td className="py-1 text-fg_h">{k}</td>
-                <td className={`py-1 tabular-nums ${accentClass}`}>{v}</td>
-                <td className="py-1 text-right tabular-nums text-fg3">{attempts}</td>
-              </tr>
-            ))}
+            {rows.map(([k, v, attempts]) => {
+              const words = wordContext?.[k];
+              return (
+                <tr key={k} className="border-t border-bg4">
+                  <td className="py-1 text-fg_h">
+                    {k}
+                    {words && words.length > 0 && (
+                      <div className="text-[10px] text-fg4 mt-0.5">
+                        in: {words.map((w) => w.word).join(', ')}
+                      </div>
+                    )}
+                  </td>
+                  <td className={`py-1 tabular-nums ${accentClass}`}>{v}</td>
+                  <td className="py-1 text-right tabular-nums text-fg3">{attempts}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}
