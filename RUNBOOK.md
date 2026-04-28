@@ -208,21 +208,107 @@ token. Possible causes:
 
 ### 5. Deployed minmus code is older than your local code
 
-This is **expected** right now: prod was last deployed at commit
-`5c700b5` (pre-Firebase). The deployed Express has no `/api/health`,
-no `authMiddleware` on `/api/*`, and silently ignores any
-`Authorization: Bearer` header your local frontend sends. Anyone who
-can reach the tunnel gets `user_id=1`'s data.
+CI auto-merges PRs to `main` but **does not** deploy them — the
+`typsy.service` on minmus keeps re-execing whatever was in
+`apps/server/dist/` at the time of the last build. If the bundle hash
+on `https://typsy.cal.taxi/` doesn't match a fresh local
+`pnpm --filter web build`, prod is stale.
 
-This is exactly what `feat/firebase-auth` (PR #29, merged) was meant
-to close. To finish the loop you need to redeploy `main` to minmus
-**with** `apps/server/.env` populated per `apps/server/.env.example`
+```bash
+# Compare the hash served by prod vs what main builds locally.
+curl -s https://typsy.cal.taxi/ | grep -oE 'assets/index-[^"]*\.js'
+pnpm --filter web build && \
+  ls apps/web/dist/assets/index-*.js | sed -E 's|.*/(.*)|\1|'
+```
+
+To deploy, follow **"Deploying to production"** below. First-time
+deploy of post-Firebase code also requires `apps/server/.env` populated
+per `apps/server/.env.example`
 (`GOOGLE_APPLICATION_CREDENTIALS=...`, `TYPSY_OWNER_FIREBASE_UID=...`,
-`PORT=3001`). Without those env vars the new server's `initAdmin()`
-will throw on first request and every `/api/*` will 401.
+`PORT=3001`). Without those env vars the server's `initAdmin()` will
+throw on first request and every `/api/*` will 401. The deploy contract
+is also documented in `.devin/knowledge.md` under "Production deploy
+contract".
 
-The deploy contract is documented in `.devin/knowledge.md` under
-"Production deploy contract".
+---
+
+## Deploying to production
+
+There is **no auto-deploy**. CI auto-merges PRs to `main` (and Vercel
+rebuilds its preview), but the live site at `https://typsy.cal.taxi` is
+served by `typsy.service` on `minmus`, which runs the compiled output
+in `apps/server/dist/` and serves the SPA bundle from `apps/web/dist/`.
+Both `dist/` directories are gitignored, so a fresh `git pull` alone
+does nothing — the server keeps re-execing the old compiled JS.
+
+To ship merged code to prod, SSH in and run the build:
+
+```bash
+ssh natha@minmus '
+  set -euo pipefail
+  cd /home/natha/Programming/typsy
+  git pull --ff-only origin main
+  pnpm install --frozen-lockfile        # only if pnpm-lock.yaml changed
+  pnpm build                            # mandatory: emits shared/dist, server/dist, web/dist
+  sudo systemctl restart typsy
+'
+```
+
+Why each step matters:
+
+- **`git pull`** — fetches the new TS / TSX source. Use `--ff-only` so
+  the deploy aborts loudly if minmus has unexpected divergent commits.
+- **`pnpm install`** — only if `pnpm-lock.yaml` changed. Re-runs
+  `better-sqlite3`'s native build via the `pnpm.onlyBuiltDependencies`
+  allowlist; without that, `node dist/index.js` crashes with
+  "Could not locate the bindings file".
+- **`pnpm build`** is mandatory and produces three things in topological
+  order (per `.devin/knowledge.md` → Production deploy contract):
+    - `packages/shared/dist/` — raw `node` cannot load `.ts`.
+    - `apps/server/dist/` — `tsc` output **plus** a copy of
+      `apps/server/src/db/migrations/*.sql` (the server's `build`
+      script does the `cp -R`; `tsc` does not).
+    - `apps/web/dist/` — Vite bundle the SPA fallback in
+      `apps/server/src/index.ts` serves on every non-`/api/*` GET.
+- **`systemctl restart typsy`** — picks up the new compiled output.
+  Migrations run on startup automatically via `getDb()`, so no separate
+  migration step is required.
+
+**Verify the deploy landed:**
+
+```bash
+# Bundle hash should change. The hash is baked into the served HTML
+# (Vite produces a content-hashed JS file like assets/index-AbCdEf12.js).
+curl -s https://typsy.cal.taxi/ | grep -oE 'assets/index-[^"]*\.js'
+
+# The /api/health route is post-Firebase. Confirm it's the new build:
+curl -sI https://typsy.cal.taxi/api/health | grep -E "(HTTP|x-powered-by)"
+# HTTP/2 200
+# x-powered-by: Express   ← request reached your Express, not just CF.
+
+# Optional: spot-check the systemd unit picked up the restart cleanly.
+ssh natha@minmus 'systemctl status typsy --no-pager | head -8'
+```
+
+**If the build fails on minmus** (TypeScript error, missing native
+binding, etc.), the existing `dist/` is unchanged and `typsy.service`
+keeps running the previous build. Fix the issue locally, push a new
+PR, and re-run the deploy.
+
+**To roll back**, check out the previous commit and rebuild:
+
+```bash
+ssh natha@minmus '
+  cd /home/natha/Programming/typsy
+  git log --oneline -5      # find the SHA you want to roll back to
+  git checkout <SHA>
+  pnpm build
+  sudo systemctl restart typsy
+'
+```
+
+The `dist/` outputs are gitignored, so you do need to rebuild for
+rollback too — there's no "previous build" cached on disk.
 
 ---
 
@@ -230,8 +316,8 @@ The deploy contract is documented in `.devin/knowledge.md` under
 
 The repo intentionally has no automated migration tooling for moving
 data between `apps/server/data/typsy.db` (your Mac) and
-`/home/natha/typsy/apps/server/data/typsy.db` (minmus). Use these
-patterns when you need to.
+`/home/natha/Programming/typsy/apps/server/data/typsy.db` (minmus). Use
+these patterns when you need to.
 
 ### Pull live prod DB → local (read-only-side; safe; doesn't touch prod)
 
@@ -248,7 +334,7 @@ cd apps/server/data && TS=$(date +%Y%m%d-%H%M%S) && \
 
 # 2. Take a clean snapshot of live prod (no service stop needed).
 ssh natha@minmus '
-  sqlite3 /home/natha/typsy/apps/server/data/typsy.db \
+  sqlite3 /home/natha/Programming/typsy/apps/server/data/typsy.db \
     ".backup /tmp/typsy-snapshot.db"
   sqlite3 /tmp/typsy-snapshot.db "PRAGMA integrity_check"
 '
@@ -287,7 +373,7 @@ ssh natha@minmus 'sqlite3 /tmp/typsy-incoming.db "PRAGMA integrity_check"'
 ssh -t natha@minmus 'sudo bash -c "
 set -euo pipefail
 TS=\$(date +%Y%m%d-%H%M%S)
-DATA=/home/natha/typsy/apps/server/data
+DATA=/home/natha/Programming/typsy/apps/server/data
 
 systemctl stop typsy
 

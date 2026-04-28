@@ -10,7 +10,7 @@
 # API at https://typsy.cal.taxi via an SSH tunnel that maps your Mac's
 # port 3001 → ssh.cal.taxi → ubuntu:localhost:3001. Every API call from
 # your local browser writes to the production SQLite at
-# /home/natha/typsy/apps/server/data/typsy.db on the Ubuntu box.
+# /home/natha/Programming/typsy/apps/server/data/typsy.db on the Ubuntu box.
 # Closing this script (Ctrl-C) tears the tunnel down and restores normal
 # behaviour. There is no local server in prod mode — port 3001 on your
 # Mac IS the tunnel for as long as the script runs.
