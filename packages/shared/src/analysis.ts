@@ -3,6 +3,26 @@ import { CHARS_PER_WORD } from './constants.js';
 import { smoothedAccuracy, smoothedErrorRate } from './bayesian.js';
 import { posKey } from './layouts.js';
 
+// ─── Ngram length validation ───────────────────────────────────────────────
+
+/**
+ * Get the expected length for a given ngram type.
+ * Returns null for word types since they have variable lengths.
+ */
+function getExpectedNgramLength(type: NgramStat['ngram_type']): number | null {
+  switch (type) {
+    case 'char1':
+      return 1;
+    case 'char2':
+      return 2;
+    case 'char3':
+      return 3;
+    case 'word1':
+    case 'word2':
+      return null; // Variable length
+  }
+}
+
 // ─── Per-finger aggregation ────────────────────────────────────────────────
 
 export interface PerFingerStats {
@@ -87,7 +107,7 @@ export function sfbRate(
   let totalAttempts = 0;
   for (const row of ngramRows) {
     if (row.ngram_type !== 'char2') continue;
-    if (row.ngram.length !== 2) continue;
+    if (row.ngram.length !== 2) continue; // Validate length matches type
     const a = fingerMap.get(row.ngram[0]);
     const b = fingerMap.get(row.ngram[1]);
     if (!a || !b) continue;
@@ -133,10 +153,12 @@ export function topWeakNgrams(
   topK = 10,
   minAttempts = 5,
 ): WeakNgram[] {
+  const expectedLength = getExpectedNgramLength(type);
   const out: WeakNgram[] = [];
   for (const row of ngramRows) {
     if (row.ngram_type !== type) continue;
     if (row.hits + row.misses < minAttempts) continue;
+    if (expectedLength !== null && row.ngram.length !== expectedLength) continue;
     out.push({
       ngram: row.ngram,
       type: row.ngram_type,
@@ -178,11 +200,13 @@ export function topSlowNgrams(
   topK = 10,
   minAttempts = 5,
 ): SlowNgram[] {
+  const expectedLength = getExpectedNgramLength(type);
   const out: SlowNgram[] = [];
   for (const row of ngramRows) {
     if (row.ngram_type !== type) continue;
     if (row.hits + row.misses < minAttempts) continue;
     if (row.hits <= 0) continue;
+    if (expectedLength !== null && row.ngram.length !== expectedLength) continue;
     const meanMs = row.total_time_ms / row.hits;
     if (meanMs <= 0) continue;
     out.push({
@@ -254,4 +278,32 @@ export function sessionsAsSeries(sessions: readonly Session[]): SessionPoint[] {
       wpm: s.wpm,
       accuracy: s.accuracy,
     }));
+}
+
+// ─── Word context for ngrams ───────────────────────────────────────────────
+
+/**
+ * Find words that contain a given bigram and have been missed.
+ * Returns up to `limit` words, sorted by miss count (highest first).
+ */
+export function findWordsWithBigram(
+  ngramRows: readonly NgramStat[],
+  bigram: string,
+  limit = 5,
+  minMisses = 1,
+): Array<{ word: string; hits: number; misses: number; errorRate: number }> {
+  const out: Array<{ word: string; hits: number; misses: number; errorRate: number }> = [];
+  for (const row of ngramRows) {
+    if (row.ngram_type !== 'word1') continue;
+    if (row.misses < minMisses) continue;
+    if (!row.ngram.includes(bigram)) continue;
+    out.push({
+      word: row.ngram,
+      hits: row.hits,
+      misses: row.misses,
+      errorRate: smoothedErrorRate(row.hits, row.misses),
+    });
+  }
+  out.sort((a, b) => b.misses - a.misses);
+  return out.slice(0, limit);
 }
