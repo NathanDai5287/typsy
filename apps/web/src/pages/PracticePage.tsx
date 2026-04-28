@@ -18,7 +18,6 @@ import {
   computeKeyHealth,
   shouldUnlockNextKey,
   nextKeyToUnlock,
-  lastKeyToLock,
 } from '@typsy/shared';
 import type { KeyPosition, NgramStat, FingerLabel } from '@typsy/shared';
 import KeyboardVisual from '../components/KeyboardVisual.tsx';
@@ -142,17 +141,33 @@ export default function PracticePage(): JSX.Element {
 
   const isMainLayout = activeProgress?.is_main_layout === 1;
 
-  const unlockedSet = useMemo<Set<string>>(() => {
-    if (!activeProgress) return new Set();
+  // Insertion-ordered array of unlocked keys. The order is the source of truth
+  // for the "lock back" UX — pressing − pops the last entry, so chronological
+  // add-history is preserved naturally without an extra DB column.
+  const unlockedKeys = useMemo<string[]>(() => {
+    if (!activeProgress) return [];
     if (isMainLayout) {
-      return new Set(positions.filter((p) => /^[a-z]$/.test(p.char)).map((p) => p.char));
+      return positions.filter((p) => /^[a-z]$/.test(p.char)).map((p) => p.char);
     }
     try {
-      return new Set(JSON.parse(activeProgress.unlocked_keys_json) as string[]);
+      const arr = JSON.parse(activeProgress.unlocked_keys_json) as string[];
+      // De-dupe defensively while preserving order — older rows may have
+      // duplicates from before the click-to-toggle flow was added.
+      const seen = new Set<string>();
+      const out: string[] = [];
+      for (const c of arr) {
+        if (!seen.has(c)) { seen.add(c); out.push(c); }
+      }
+      return out;
     } catch {
-      return new Set();
+      return [];
     }
   }, [activeProgress, isMainLayout, positions]);
+
+  const unlockedSet = useMemo<Set<string>>(
+    () => new Set(unlockedKeys),
+    [unlockedKeys],
+  );
 
   const posFingerMap = useMemo<Record<string, FingerLabel>>(() => {
     if (!userData) return {};
@@ -195,6 +210,15 @@ export default function PracticePage(): JSX.Element {
     }
   }, [mode, activeProgress, updateProgress]);
 
+  // Stable serialized key of unlocked set contents — used as effect dependency
+  // so text regenerates whenever the set changes (size OR membership).
+  // Sorted so we don't regenerate on identity-only reorders (e.g. lock then
+  // immediately unlock the same key — same logical set, no need to reset).
+  const unlockedKey = useMemo(
+    () => [...unlockedKeys].sort().join(','),
+    [unlockedKeys],
+  );
+
   // ─── Manual unlock/lock controls ─────────────────────────────────────────
   const layoutAlphaChars = useMemo(
     () => positions.filter((p) => /^[a-z]$/.test(p.char)),
@@ -204,9 +228,11 @@ export default function PracticePage(): JSX.Element {
   const applyUnlockedChange = useCallback(
     async (next: string[]) => {
       if (!activeProgress) return;
+      // Persist the array verbatim — order is meaningful (the last entry is
+      // the one that − will pop). Don't sort.
       await postProgressUpdate({
         layout_id: activeProgress.layout_id,
-        unlocked_keys_json: JSON.stringify(next.sort()),
+        unlocked_keys_json: JSON.stringify(next),
       });
       void queryClient.invalidateQueries({ queryKey: ['user'] });
     },
@@ -215,34 +241,33 @@ export default function PracticePage(): JSX.Element {
 
   const handleUnlockNext = useCallback(async () => {
     if (!activeProgress || isMainLayout) return;
-    const unlockedArr = Array.from(unlockedSet);
-    const next = nextKeyToUnlock(unlockedArr, layoutAlphaChars);
+    const next = nextKeyToUnlock(unlockedKeys, layoutAlphaChars);
     if (!next) return;
-    await applyUnlockedChange([...unlockedArr, next]);
-  }, [activeProgress, isMainLayout, unlockedSet, layoutAlphaChars, applyUnlockedChange]);
+    await applyUnlockedChange([...unlockedKeys, next]);
+  }, [activeProgress, isMainLayout, unlockedKeys, layoutAlphaChars, applyUnlockedChange]);
 
   const handleLockLast = useCallback(async () => {
     if (!activeProgress || isMainLayout) return;
-    const unlockedArr = Array.from(unlockedSet);
-    const toRemove = lastKeyToLock(unlockedArr, layoutAlphaChars);
-    if (!toRemove) return;
-    await applyUnlockedChange(unlockedArr.filter((c) => c !== toRemove));
-  }, [activeProgress, isMainLayout, unlockedSet, layoutAlphaChars, applyUnlockedChange]);
+    if (unlockedKeys.length <= 1) return;
+    // Pop the most recently added key (LIFO).
+    await applyUnlockedChange(unlockedKeys.slice(0, -1));
+  }, [activeProgress, isMainLayout, unlockedKeys, applyUnlockedChange]);
 
   const handleToggleKey = useCallback(
     async (char: string) => {
       if (!activeProgress || isMainLayout) return;
-      const unlockedArr = Array.from(unlockedSet);
+      if (!/^[a-z]$/.test(char)) return; // ignore non-alpha clicks
       const isUnlocked = unlockedSet.has(char);
       if (isUnlocked) {
-        // Don't allow locking if it's the only key
-        if (unlockedArr.length <= 1) return;
-        await applyUnlockedChange(unlockedArr.filter((c) => c !== char));
+        // Don't allow locking the last remaining key
+        if (unlockedKeys.length <= 1) return;
+        await applyUnlockedChange(unlockedKeys.filter((c) => c !== char));
       } else {
-        await applyUnlockedChange([...unlockedArr, char]);
+        // Append to end — this becomes the new "last unlocked" that − will pop
+        await applyUnlockedChange([...unlockedKeys, char]);
       }
     },
-    [activeProgress, isMainLayout, unlockedSet, applyUnlockedChange],
+    [activeProgress, isMainLayout, unlockedKeys, unlockedSet, applyUnlockedChange],
   );
 
   // ─── Session state ───────────────────────────────────────────────────────
@@ -313,7 +338,12 @@ export default function PracticePage(): JSX.Element {
     if (!sentence && activeProgress && unlockedSet.size > 0 && ngramRows) {
       resetSession();
     }
-  }, [activeProgress, unlockedSet.size, ngramRows, sentence, resetSession]);
+  }, [activeProgress, unlockedKey, ngramRows, sentence, resetSession]);
+
+  useEffect(() => {
+    if (sentence) resetSession();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unlockedKey]);
 
   useEffect(() => {
     if (sentence) resetSession();
@@ -414,11 +444,11 @@ export default function PracticePage(): JSX.Element {
         });
 
         const idx = indexNgramStats(fresh);
-        const unlockedArr = Array.from(unlockedSet);
-        const health = computeKeyHealth(idx, unlockedArr);
-        const next = shouldUnlockNextKey(health, unlockedArr, positions);
+        const health = computeKeyHealth(idx, unlockedKeys);
+        const next = shouldUnlockNextKey(health, unlockedKeys, positions);
         if (next) {
-          const nextUnlocked = [...unlockedArr, next].sort();
+          // Append in insertion order — preserves the LIFO history used by −.
+          const nextUnlocked = [...unlockedKeys, next];
           await postProgressUpdate({
             layout_id: activeProgress.layout_id,
             unlocked_keys_json: JSON.stringify(nextUnlocked),
@@ -438,7 +468,7 @@ export default function PracticePage(): JSX.Element {
     } catch (err) {
       console.error('Failed to save session', err);
     }
-  }, [activeProgress, isMainLayout, mode, queryClient, unlockedSet, positions, resetSession]);
+  }, [activeProgress, isMainLayout, mode, queryClient, unlockedKeys, positions, resetSession]);
 
   useEffect(() => {
     if (lastSummary === null) return;
@@ -581,12 +611,10 @@ export default function PracticePage(): JSX.Element {
             <span className="text-fg3">daily driver</span>
           ) : (
             <UnlockControls
-              unlockedSet={unlockedSet}
-              layoutAlphaChars={layoutAlphaChars}
+              unlockedCount={unlockedKeys.length}
               totalAlpha={totalAlpha}
               onUnlockNext={handleUnlockNext}
               onLockLast={handleLockLast}
-              onToggleKey={handleToggleKey}
             />
           )}
         </div>
@@ -660,7 +688,9 @@ export default function PracticePage(): JSX.Element {
         </div>
       </div>
 
-      {/* On-screen keyboard */}
+      {/* On-screen keyboard. When learning a layout, every alpha key is
+          clickable and toggles its lock state — daily-driver layouts skip
+          this so all keys remain non-interactive. */}
       {showKeyboard && (
         <div className="mt-6">
           <KeyboardVisual
@@ -669,6 +699,7 @@ export default function PracticePage(): JSX.Element {
             nextChar={nextChar}
             posFingerMap={posFingerMap}
             charHits={charHits}
+            onKeyClick={isMainLayout ? undefined : handleToggleKey}
           />
         </div>
       )}
@@ -718,122 +749,61 @@ function Stat({ label, value }: { label: string; value: string | number }) {
 }
 
 // ─── UnlockControls ──────────────────────────────────────────────────────────
+// Compact +/count/− trio shown in the practice top bar. Specific keys are
+// toggled by clicking on the on-screen keyboard itself; this component is
+// the "next-in-priority-order" shortcut.
 
 interface UnlockControlsProps {
-  unlockedSet: ReadonlySet<string>;
-  layoutAlphaChars: readonly { char: string; row: number; col: number }[];
+  unlockedCount: number;
   totalAlpha: number;
   onUnlockNext: () => void;
   onLockLast: () => void;
-  onToggleKey: (char: string) => void;
 }
 
 function UnlockControls({
-  unlockedSet,
-  layoutAlphaChars,
+  unlockedCount,
   totalAlpha,
   onUnlockNext,
   onLockLast,
-  onToggleKey,
 }: UnlockControlsProps) {
-  const [showPicker, setShowPicker] = useState(false);
-
-  const canUnlockMore = unlockedSet.size < totalAlpha;
-  const canLockBack = unlockedSet.size > 1;
-
-  // Sort all alpha chars in unlock order (ROW_PRIORITY × COL_PRIORITY) for the picker
-  const COL_PRIORITY_LOCAL = [3, 4, 2, 5, 1, 6, 0, 7, 8, 9];
-  const ROW_PRIORITY_LOCAL = [1, 0, 2];
-  const orderedChars: string[] = [];
-  for (const row of ROW_PRIORITY_LOCAL) {
-    for (const col of COL_PRIORITY_LOCAL) {
-      const key = layoutAlphaChars.find((k) => k.row === row && k.col === col);
-      if (key) orderedChars.push(key.char);
-    }
-  }
+  const canUnlockMore = unlockedCount < totalAlpha;
+  const canLockBack = unlockedCount > 1;
 
   return (
-    <span className="relative inline-flex items-center gap-1">
-      {/* Decrement — lock back one key */}
+    <span className="inline-flex items-center gap-1">
       <button
         type="button"
-        title="Lock last unlocked key"
+        title="Lock most recently unlocked key"
         onClick={onLockLast}
         disabled={!canLockBack}
         className={[
           'w-5 h-5 flex items-center justify-center border font-mono text-xs leading-none focus-visible:outline-none focus-visible:border-yellow-400',
           canLockBack
-            ? 'border-bg4 text-fg2 hover:text-fg_h hover:border-fg4'
+            ? 'border-bg4 text-fg2 hover:text-fg_h hover:border-fg4 cursor-pointer'
             : 'border-bg3 text-fg4 opacity-40 cursor-not-allowed',
         ].join(' ')}
       >
         −
       </button>
 
-      {/* Count — click to open key picker */}
-      <button
-        type="button"
-        title="Pick which keys are unlocked"
-        onClick={() => setShowPicker((v) => !v)}
-        className="px-1 font-mono text-xs text-fg3 hover:text-fg_h focus-visible:outline-none focus-visible:text-yellow-400"
-      >
-        {unlockedSet.size}/{totalAlpha}
-      </button>
+      <span className="px-1 font-mono text-xs text-fg3 tabular-nums">
+        {unlockedCount}/{totalAlpha}
+      </span>
 
-      {/* Increment — unlock next key */}
       <button
         type="button"
-        title="Unlock next key"
+        title="Unlock next key in priority order"
         onClick={onUnlockNext}
         disabled={!canUnlockMore}
         className={[
           'w-5 h-5 flex items-center justify-center border font-mono text-xs leading-none focus-visible:outline-none focus-visible:border-yellow-400',
           canUnlockMore
-            ? 'border-bg4 text-fg2 hover:text-fg_h hover:border-fg4'
+            ? 'border-bg4 text-fg2 hover:text-fg_h hover:border-fg4 cursor-pointer'
             : 'border-bg3 text-fg4 opacity-40 cursor-not-allowed',
         ].join(' ')}
       >
         +
       </button>
-
-      {/* Key picker popover */}
-      {showPicker && (
-        <div className="absolute top-full left-0 mt-1 z-40 panel p-2 flex flex-wrap gap-1 w-48">
-          {orderedChars.map((char) => {
-            const isUnlocked = unlockedSet.has(char);
-            const isLast = isUnlocked && unlockedSet.size === 1;
-            return (
-              <button
-                key={char}
-                type="button"
-                title={isUnlocked ? `Lock '${char}'` : `Unlock '${char}'`}
-                onClick={() => {
-                  onToggleKey(char);
-                  // Don't close picker — let user make multiple changes
-                }}
-                disabled={isLast}
-                className={[
-                  'w-7 h-7 flex items-center justify-center border font-mono text-xs focus-visible:outline-none focus-visible:border-yellow-400',
-                  isLast
-                    ? 'border-bg3 text-fg4 opacity-40 cursor-not-allowed'
-                    : isUnlocked
-                      ? 'bg-yellow-400 text-bg_h border-yellow-400 hover:bg-yellow-300'
-                      : 'border-bg4 text-fg3 hover:text-fg_h hover:border-fg4',
-                ].join(' ')}
-              >
-                {char}
-              </button>
-            );
-          })}
-          <button
-            type="button"
-            onClick={() => setShowPicker(false)}
-            className="w-full mt-1 text-center text-fg4 text-xs hover:text-fg_h focus-visible:outline-none"
-          >
-            close
-          </button>
-        </div>
-      )}
     </span>
   );
 }

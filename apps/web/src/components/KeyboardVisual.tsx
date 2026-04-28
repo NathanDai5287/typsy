@@ -28,6 +28,12 @@ export interface KeyboardVisualProps {
   heat?: ReadonlyMap<string, number>;
   /** Compact rendering — used in cards / previews. */
   compact?: boolean;
+  /**
+   * Called when a key is clicked. When provided, every key gets a pointer
+   * cursor + hover highlight so the keyboard reads as interactive. Used by
+   * the practice page to let the user toggle individual keys' lock state.
+   */
+  onKeyClick?: (char: string) => void;
 }
 
 /**
@@ -47,6 +53,7 @@ export default function KeyboardVisual({
   fadeStrength = 1.0,
   heat,
   compact = false,
+  onKeyClick,
 }: KeyboardVisualProps): JSX.Element {
   const rows = [0, 1, 2].map((r) =>
     positions
@@ -66,7 +73,7 @@ export default function KeyboardVisual({
   const heatScale = scaleHeatForDisplay(heat);
 
   return (
-    <div className="select-none" aria-hidden>
+    <div className="select-none" aria-hidden={onKeyClick ? undefined : true}>
       {rows.map((row, ri) => (
         // Stagger each row a fraction of the key width to mimic the
         // physical staircase of a real ANSI keyboard.
@@ -107,23 +114,28 @@ export default function KeyboardVisual({
             const needsLeftGutter = pos.col === 4 || pos.col === 6;
             const gutterPx = compact ? 6 : 10;
 
-            return (
-              <div
-                key={`${pos.row}-${pos.col}`}
-                className={[
-                  'relative flex items-center justify-center font-mono font-medium',
-                  'border border-bg4',
-                  isUnlocked ? `${fingerBg} text-bg_h` : 'bg-bg0 text-fg4',
-                  ringClass,
-                ].join(' ')}
-                style={{
-                  width: `${sizePx}px`,
-                  height: `${sizePx}px`,
-                  fontSize: `${fontSize}px`,
-                  opacity,
-                  marginLeft: needsLeftGutter ? `${gutterPx}px` : undefined,
-                }}
-              >
+            const baseClass = [
+              'relative flex items-center justify-center font-mono font-medium',
+              'border border-bg4',
+              isUnlocked ? `${fingerBg} text-bg_h` : 'bg-bg0 text-fg4',
+              ringClass,
+            ];
+            const interactiveClass = onKeyClick
+              ? [
+                  'cursor-pointer transition-all duration-75',
+                  'hover:scale-110 hover:border-yellow-400 hover:z-10 hover:shadow-md',
+                  'focus-visible:outline-none focus-visible:scale-110 focus-visible:border-yellow-400',
+                ]
+              : [];
+            const keyStyle = {
+              width: `${sizePx}px`,
+              height: `${sizePx}px`,
+              fontSize: `${fontSize}px`,
+              opacity,
+              marginLeft: needsLeftGutter ? `${gutterPx}px` : undefined,
+            };
+            const inner = (
+              <>
                 {pos.char}
                 {isHomeIndex && (
                   <span
@@ -144,6 +156,32 @@ export default function KeyboardVisual({
                     style={{ background: heatToColor(heatPct) }}
                   />
                 )}
+              </>
+            );
+
+            if (onKeyClick) {
+              return (
+                <button
+                  key={`${pos.row}-${pos.col}`}
+                  type="button"
+                  className={[...baseClass, ...interactiveClass].join(' ')}
+                  style={keyStyle}
+                  onClick={() => onKeyClick(pos.char)}
+                  title={isUnlocked ? `Lock '${pos.char}'` : `Unlock '${pos.char}'`}
+                  aria-pressed={isUnlocked}
+                >
+                  {inner}
+                </button>
+              );
+            }
+
+            return (
+              <div
+                key={`${pos.row}-${pos.col}`}
+                className={baseClass.join(' ')}
+                style={keyStyle}
+              >
+                {inner}
               </div>
             );
           })}

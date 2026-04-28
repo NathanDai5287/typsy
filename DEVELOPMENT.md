@@ -70,7 +70,7 @@ thing that changes is what's behind `/api`.
 | Mode | What runs locally | What `/api` hits | Where writes land |
 |---|---|---|---|
 | `--db=staging` (default) | `tsc -w` for `@typsy/shared` + `tsx watch` for `apps/server` (port 3001) + `vite` for `apps/web` (port 5173) | the local server on port 3001 | `apps/server/data/typsy.db` (gitignored, local file) |
-| `--db=prod` | `ssh -N -L 3001:localhost:3001 natha@ssh.cal.taxi` (tunnel) + `tsc -w` for `@typsy/shared` + `vite` for `apps/web` (port 5173) | the production server through the SSH tunnel | `/home/natha/typsy/apps/server/data/typsy.db` on the Ubuntu box (the same DB `https://typsy.cal.taxi` reads/writes) |
+| `--db=prod` | `ssh -N -L 3001:localhost:3001 natha@ssh.cal.taxi` (tunnel) + `tsc -w` for `@typsy/shared` + `vite` for `apps/web` (port 5173) | the production server through the SSH tunnel | `/home/natha/Programming/typsy/apps/server/data/typsy.db` on the Ubuntu box (the same DB `https://typsy.cal.taxi` reads/writes) |
 
 ### `pnpm dev` (a.k.a. `pnpm dev --db=staging`)
 
