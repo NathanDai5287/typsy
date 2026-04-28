@@ -74,6 +74,21 @@ describe('NgramTracker', () => {
     tracker.recordChar(' ', ' ', 80);
     const pending = tracker.getPendingForTest();
     expect(pending.has('word1:the')).toBe(true);
+    expect(pending.get('word1:the')?.hits).toBe(1);
+    expect(pending.get('word1:the')?.misses).toBe(0);
+  });
+
+  it('counts word1 as missed if any character in the word was mistyped (even if corrected)', () => {
+    tracker.recordChar('t', 't', 80);
+    tracker.recordChar('x', 'h', 80); // mistake on expected 'h'
+    tracker.recordChar('h', 'h', 80); // corrected
+    tracker.recordChar('e', 'e', 80);
+    tracker.recordChar(' ', ' ', 80);
+
+    const pending = tracker.getPendingForTest();
+    expect(pending.has('word1:the')).toBe(true);
+    expect(pending.get('word1:the')?.hits).toBe(0);
+    expect(pending.get('word1:the')?.misses).toBe(1);
   });
 
   it('generates word2 after two words', () => {
@@ -91,6 +106,21 @@ describe('NgramTracker', () => {
     tracker.finalizeWord();
     const pending = tracker.getPendingForTest();
     expect(pending.has('word1:fox')).toBe(true);
+    expect(pending.get('word1:fox')?.hits).toBe(1);
+    expect(pending.get('word1:fox')?.misses).toBe(0);
+  });
+
+  it('finalizeWord counts the last word as missed if any character was mistyped', () => {
+    tracker.recordChar('f', 'f', 80);
+    tracker.recordChar('o', 'o', 80);
+    tracker.recordChar('x', 'x', 80);
+    tracker.recordChar('!', 'x', 80); // mistake while still in the word (expected 'x')
+    tracker.finalizeWord();
+
+    const pending = tracker.getPendingForTest();
+    expect(pending.has('word1:fox')).toBe(true);
+    expect(pending.get('word1:fox')?.hits).toBe(0);
+    expect(pending.get('word1:fox')?.misses).toBe(1);
   });
 
   // ─── time tracking ────────────────────────────────────────────────────────
