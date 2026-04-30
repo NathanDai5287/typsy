@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -160,6 +160,8 @@ export default function DashboardPage(): JSX.Element {
   const streak = useMemo(() => dayStreak(sessions ?? []), [sessions]);
   const totalChars = useMemo(() => totalCharsTyped(sessions ?? []), [sessions]);
   const lastSession = sessions?.[0];
+
+  const [hoveredKey, setHoveredKey] = useState<string | null>(null);
 
   if (!userData || !layouts) {
     return (
@@ -357,12 +359,29 @@ export default function DashboardPage(): JSX.Element {
           dot color is each key's smoothed error rate, scaled so your worst
           key always shows some red (deep red when it's clearly an outlier)
         </p>
-        <KeyboardVisual
-          positions={positions}
-          posFingerMap={posFingerMap}
-          heat={heatmap}
-          keyStats={keyStats}
-        />
+        <div className="flex items-center gap-8">
+          <KeyboardVisual
+            positions={positions}
+            posFingerMap={posFingerMap}
+            heat={heatmap}
+            onKeyHover={setHoveredKey}
+          />
+          <div className="font-mono min-w-[120px]">
+            {hoveredKey && keyStats.get(hoveredKey) ? (
+              <>
+                <div className="text-2xl text-fg_h font-bold">{hoveredKey}</div>
+                <div className="text-fg1 mt-1 tabular-nums">
+                  {keyStats.get(hoveredKey)!.wpm.toFixed(1)} wpm
+                </div>
+                <div className="text-fg3 tabular-nums">
+                  {(keyStats.get(hoveredKey)!.accuracy * 100).toFixed(0)}% acc
+                </div>
+              </>
+            ) : (
+              <span className="text-[11px] text-fg4">hover a key</span>
+            )}
+          </div>
+        </div>
       </section>
 
       {/* Top weak / slow ngrams */}
