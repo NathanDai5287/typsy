@@ -61,17 +61,25 @@ app.use('/api/ngrams', ngramsRouter);
 
 // In production (single-origin deploy), serve the built SPA from the same Express
 // process so /api and the web app share a hostname. Resolved from this file's
-// location: apps/server/dist/index.js → ../../web/dist. Guarded by fs.existsSync
-// so dev mode (where apps/web/dist may not exist) is unaffected.
+// location: apps/server/dist/index.js → ../../web/dist.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const webDistDir = path.resolve(__dirname, '../../web/dist');
+const spaIndexHtml = path.join(webDistDir, 'index.html');
+// Check once at startup — avoids per-request I/O.
+const hasSpaIndex = fs.existsSync(spaIndexHtml);
+
 if (fs.existsSync(webDistDir)) {
   app.use(express.static(webDistDir));
-  app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api/')) return next();
-    res.sendFile(path.join(webDistDir, 'index.html'));
-  });
 }
+
+// SPA fallback: always registered so that client-side routes (e.g. /dashboard,
+// /practice) return index.html on a hard reload rather than 404.  Only fires
+// when the web build is present; passes through to Express's default 404 otherwise
+// (i.e. in dev mode where Vite serves the frontend on its own port).
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api/') || !hasSpaIndex) return next();
+  res.sendFile(spaIndexHtml);
+});
 
 const mode = getCurrentDataMode();
 const bypass = process.env.BYPASS_AUTH === '1';
