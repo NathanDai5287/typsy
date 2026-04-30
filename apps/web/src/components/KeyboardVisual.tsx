@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import type { FingerLabel, KeyPosition, KeyStat } from '@typsy/shared';
+import type { FingerLabel, KeyPosition } from '@typsy/shared';
 import { posKey } from '@typsy/shared';
 import { FINGER_BG } from '../lib/finger-colors.ts';
 
@@ -27,8 +26,11 @@ export interface KeyboardVisualProps {
   fadeStrength?: number;
   /** Optional heatmap (char → 0..1 error rate) drawn as a colored ring. */
   heat?: ReadonlyMap<string, number>;
-  /** Optional per-key WPM + accuracy shown in a hover tooltip. */
-  keyStats?: ReadonlyMap<string, KeyStat>;
+  /**
+   * Called when the pointer enters or leaves a key. Passes the char on enter,
+   * null on leave. Used by parents to display per-key stats outside the component.
+   */
+  onKeyHover?: (char: string | null) => void;
   /** Compact rendering — used in cards / previews. */
   compact?: boolean;
   /**
@@ -55,13 +57,10 @@ export default function KeyboardVisual({
   charHits,
   fadeStrength = 1.0,
   heat,
-  keyStats,
+  onKeyHover,
   compact = false,
   onKeyClick,
 }: KeyboardVisualProps): JSX.Element {
-  const [hoveredChar, setHoveredChar] = useState<string | null>(null);
-  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-
   const rows = [0, 1, 2].map((r) =>
     positions
       .filter((p) => p.row === r)
@@ -79,13 +78,11 @@ export default function KeyboardVisual({
   // (genuinely bad), no rescaling kicks in. See `scaleHeatForDisplay`.
   const heatScale = scaleHeatForDisplay(heat);
 
-  const hoveredStat = hoveredChar ? keyStats?.get(hoveredChar) : undefined;
-
   return (
     <div
-      className="select-none relative"
+      className="select-none"
       aria-hidden={onKeyClick ? undefined : true}
-      onMouseLeave={() => setHoveredChar(null)}
+      onMouseLeave={() => onKeyHover?.(null)}
     >
       {rows.map((row, ri) => (
         // Stagger each row a fraction of the key width to mimic the
@@ -148,20 +145,8 @@ export default function KeyboardVisual({
               marginLeft: needsLeftGutter ? `${gutterPx}px` : undefined,
             };
 
-            const hoverHandlers = keyStats
-              ? {
-                  onMouseEnter: (e: React.MouseEvent) => {
-                    const rect = (e.currentTarget as HTMLElement)
-                      .closest('.relative')
-                      ?.getBoundingClientRect();
-                    const keyRect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                    setHoveredChar(pos.char);
-                    setTooltipPos({
-                      x: keyRect.left - (rect?.left ?? 0) + sizePx / 2,
-                      y: keyRect.top - (rect?.top ?? 0) - 6,
-                    });
-                  },
-                }
+            const hoverHandlers = onKeyHover
+              ? { onMouseEnter: () => onKeyHover(pos.char) }
               : {};
 
             const inner = (
@@ -219,22 +204,6 @@ export default function KeyboardVisual({
           })}
         </div>
       ))}
-
-      {hoveredStat && hoveredChar && (
-        <div
-          className="pointer-events-none absolute z-20 rounded px-2.5 py-1.5 text-xs font-mono -translate-x-1/2 -translate-y-full"
-          style={{
-            left: tooltipPos.x,
-            top: tooltipPos.y,
-            background: '#161819',
-            border: '1px solid #3c3836',
-          }}
-        >
-          <span className="text-fg_h font-bold">{hoveredChar}</span>
-          <span className="text-fg1 ml-2">{hoveredStat.wpm.toFixed(1)} wpm</span>
-          <span className="text-fg3 ml-1.5">· {(hoveredStat.accuracy * 100).toFixed(0)}%</span>
-        </div>
-      )}
     </div>
   );
 }
