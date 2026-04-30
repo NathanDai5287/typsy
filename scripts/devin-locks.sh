@@ -65,11 +65,12 @@ run_py() {
     CALLER_PID="$CALLER_PID" \
     CALLER_CWD="$CALLER_CWD" \
     python3 - "$@" <<'PYEOF'
+import contextlib
 import datetime as dt
-import fcntl
 import json
 import os
 import sys
+import time
 
 LOCK_FILE = os.environ["LOCK_FILE"]
 CALLER_PID = os.environ.get("CALLER_PID", "")
@@ -90,11 +91,42 @@ def parse_iso(s: str) -> dt.datetime | None:
         return None
 
 
+@contextlib.contextmanager
 def open_locked(mode: str = "a+"):
-    """Open the lock file and acquire an exclusive flock. Returns the file object."""
+    """Open the lock file under a cross-platform exclusive lock.
+
+    Uses a sidecar LOCK_FILE+'.lck' created with O_CREAT|O_EXCL — that flag
+    is atomic on every OS (Windows included), unlike fcntl which is Unix-only.
+    Spins for up to 10 s, treating any .lck file older than 30 s as stale
+    (handles crashes that left the sidecar behind).
+    """
+    lck = LOCK_FILE + ".lck"
+    deadline = time.monotonic() + 10
+    while True:
+        try:
+            fd = os.open(lck, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(fd, str(os.getpid()).encode())
+            os.close(fd)
+            break
+        except FileExistsError:
+            try:
+                if time.time() - os.path.getmtime(lck) > 30:
+                    os.unlink(lck)
+                    continue
+            except FileNotFoundError:
+                continue  # disappeared between check and stat — retry
+            if time.monotonic() > deadline:
+                raise TimeoutError(f"Could not acquire {lck} after 10 s")
+            time.sleep(0.1)
     f = open(LOCK_FILE, mode)
-    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-    return f
+    try:
+        yield f
+    finally:
+        f.close()
+        try:
+            os.unlink(lck)
+        except FileNotFoundError:
+            pass
 
 
 def read_data(f) -> dict:
