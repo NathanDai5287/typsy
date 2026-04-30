@@ -1,4 +1,5 @@
-import type { FingerLabel, KeyPosition } from '@typsy/shared';
+import { useState } from 'react';
+import type { FingerLabel, KeyPosition, KeyStat } from '@typsy/shared';
 import { posKey } from '@typsy/shared';
 import { FINGER_BG } from '../lib/finger-colors.ts';
 
@@ -26,6 +27,8 @@ export interface KeyboardVisualProps {
   fadeStrength?: number;
   /** Optional heatmap (char → 0..1 error rate) drawn as a colored ring. */
   heat?: ReadonlyMap<string, number>;
+  /** Optional per-key WPM + accuracy shown in a hover tooltip. */
+  keyStats?: ReadonlyMap<string, KeyStat>;
   /** Compact rendering — used in cards / previews. */
   compact?: boolean;
   /**
@@ -52,9 +55,13 @@ export default function KeyboardVisual({
   charHits,
   fadeStrength = 1.0,
   heat,
+  keyStats,
   compact = false,
   onKeyClick,
 }: KeyboardVisualProps): JSX.Element {
+  const [hoveredChar, setHoveredChar] = useState<string | null>(null);
+  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
   const rows = [0, 1, 2].map((r) =>
     positions
       .filter((p) => p.row === r)
@@ -72,8 +79,14 @@ export default function KeyboardVisual({
   // (genuinely bad), no rescaling kicks in. See `scaleHeatForDisplay`.
   const heatScale = scaleHeatForDisplay(heat);
 
+  const hoveredStat = hoveredChar ? keyStats?.get(hoveredChar) : undefined;
+
   return (
-    <div className="select-none" aria-hidden={onKeyClick ? undefined : true}>
+    <div
+      className="select-none relative"
+      aria-hidden={onKeyClick ? undefined : true}
+      onMouseLeave={() => setHoveredChar(null)}
+    >
       {rows.map((row, ri) => (
         // Stagger each row a fraction of the key width to mimic the
         // physical staircase of a real ANSI keyboard.
@@ -134,6 +147,23 @@ export default function KeyboardVisual({
               opacity,
               marginLeft: needsLeftGutter ? `${gutterPx}px` : undefined,
             };
+
+            const hoverHandlers = keyStats
+              ? {
+                  onMouseEnter: (e: React.MouseEvent) => {
+                    const rect = (e.currentTarget as HTMLElement)
+                      .closest('.relative')
+                      ?.getBoundingClientRect();
+                    const keyRect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                    setHoveredChar(pos.char);
+                    setTooltipPos({
+                      x: keyRect.left - (rect?.left ?? 0) + sizePx / 2,
+                      y: keyRect.top - (rect?.top ?? 0) - 6,
+                    });
+                  },
+                }
+              : {};
+
             const inner = (
               <>
                 {pos.char}
@@ -169,6 +199,7 @@ export default function KeyboardVisual({
                   onClick={() => onKeyClick(pos.char)}
                   title={isUnlocked ? `Lock '${pos.char}'` : `Unlock '${pos.char}'`}
                   aria-pressed={isUnlocked}
+                  {...hoverHandlers}
                 >
                   {inner}
                 </button>
@@ -180,6 +211,7 @@ export default function KeyboardVisual({
                 key={`${pos.row}-${pos.col}`}
                 className={baseClass.join(' ')}
                 style={keyStyle}
+                {...hoverHandlers}
               >
                 {inner}
               </div>
@@ -187,6 +219,22 @@ export default function KeyboardVisual({
           })}
         </div>
       ))}
+
+      {hoveredStat && hoveredChar && (
+        <div
+          className="pointer-events-none absolute z-20 rounded px-2.5 py-1.5 text-xs font-mono -translate-x-1/2 -translate-y-full"
+          style={{
+            left: tooltipPos.x,
+            top: tooltipPos.y,
+            background: '#161819',
+            border: '1px solid #3c3836',
+          }}
+        >
+          <span className="text-fg_h font-bold">{hoveredChar}</span>
+          <span className="text-fg1 ml-2">{hoveredStat.wpm.toFixed(1)} wpm</span>
+          <span className="text-fg3 ml-1.5">· {(hoveredStat.accuracy * 100).toFixed(0)}%</span>
+        </div>
+      )}
     </div>
   );
 }
