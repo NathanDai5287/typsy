@@ -339,6 +339,81 @@ describe('generateFlowLine', () => {
     expect(b).toEqual(a);
   });
 
+  it('higher randomFraction reduces concentration on the weakest score', () => {
+    // Pin "th" to extreme weakness so words containing it dominate the
+    // scored stream. Random injection should pull the line back toward
+    // the broader candidate distribution, so a 50% random line should
+    // contain noticeably fewer "th" words than a 0% random one.
+    const allowed = new Set('abcdefghijklmnopqrstuvwxyz'.split(''));
+    const userIndex = indexNgramStats([
+      { ngram: 'th', ngram_type: 'char2', hits: 0, misses: 1000, total_time_ms: 0 },
+    ]);
+    const seedRng = (seed: number) => () => {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    };
+    const greedy = generateFlowLine({
+      allowed,
+      userIndex,
+      numWords: 100,
+      randomFraction: 0,
+      rng: seedRng(7),
+    }).split(' ');
+    const varied = generateFlowLine({
+      allowed,
+      userIndex,
+      numWords: 100,
+      randomFraction: 0.5,
+      rng: seedRng(7),
+    }).split(' ');
+
+    const greedyTh = greedy.filter((w) => w.includes('th')).length;
+    const variedTh = varied.filter((w) => w.includes('th')).length;
+    expect(variedTh).toBeLessThan(greedyTh);
+  });
+
+  it('recent words are penalized across calls (cross-chunk memory)', () => {
+    // Same allowed + index + seed: a second call that lists the first
+    // call's emitted words as `recent` should differ from a second call
+    // that doesn't, because every recent word starts at a one-step decay
+    // disadvantage.
+    const allowed = new Set('abcdefghijklmnopqrstuvwxyz'.split(''));
+    const seedRng = (seed: number) => () => {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    };
+    const first = generateFlowLine({
+      allowed,
+      userIndex: indexNgramStats([]),
+      numWords: 50,
+      rng: seedRng(99),
+    });
+    const recent = new Set(first.split(' '));
+    const followUpWithRecent = generateFlowLine({
+      allowed,
+      userIndex: indexNgramStats([]),
+      numWords: 50,
+      recent,
+      rng: seedRng(99),
+    });
+    const followUpWithoutRecent = generateFlowLine({
+      allowed,
+      userIndex: indexNgramStats([]),
+      numWords: 50,
+      rng: seedRng(99),
+    });
+    expect(followUpWithRecent).not.toEqual(followUpWithoutRecent);
+    // And the follow-up SHOULD overlap less with the first line when
+    // recent is supplied.
+    const overlapWith = followUpWithRecent
+      .split(' ')
+      .filter((w) => recent.has(w)).length;
+    const overlapWithout = followUpWithoutRecent
+      .split(' ')
+      .filter((w) => recent.has(w)).length;
+    expect(overlapWith).toBeLessThan(overlapWithout);
+  });
+
   it('alpha=0 + delta=0 makes timing data invisible to scoring', () => {
     // Knob test: zeroing both slowness coefficients should make the
     // generator ignore timing data entirely. Two indexes identical in

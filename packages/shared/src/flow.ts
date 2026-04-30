@@ -7,8 +7,18 @@ export interface FlowOptions {
   allowed: ReadonlySet<string>;
   /** Per-user ngram index for weakness scoring. */
   userIndex: NgramIndex;
-  /** Number of words to emit (default 20). */
+  /** Number of words to emit (default 50). */
   numWords?: number;
+  /**
+   * Fraction of emitted words drawn uniformly from the FULL filtered
+   * candidate pool (any length in `[minLength, maxLength]`) rather than
+   * from the score-based top-K. Random picks are then shuffled together
+   * with the scored picks. This breaks the perceived "samey" feel that
+   * comes from the score function picking the same handful of weak words
+   * every chunk. Default 0.25 (so a 50-word line carries ~13 random
+   * words and ~37 weakness-targeted ones).
+   */
+  randomFraction?: number;
   /**
    * Softmax temperature applied to MAX-normalized scores within a length
    * bucket (lower = greedier). 0.7 is a relaxed default that introduces
@@ -36,11 +46,11 @@ export interface FlowOptions {
   /**
    * Per-emit decay applied to a word's weight: `weight × decay^count`,
    * where `count` includes both `recent` (one step) and how many times
-   * the word has already been emitted in the current call. 0.2 means the
-   * second emit of a word is only 20% as likely as the first, the third
-   * 4%, etc. — strong enough that small candidate buckets cycle through
-   * variety naturally rather than repeating the top word back-to-back.
-   * Default 0.2.
+   * the word has already been emitted in the current call. 0.15 means
+   * the second emit of a word is only 15% as likely as the first, the
+   * third 2.25%, etc. — strong enough that small candidate buckets
+   * cycle through variety rather than repeating the top word.
+   * Default 0.15.
    */
   recentDecay?: number;
   /**
@@ -306,45 +316,50 @@ function softmaxSample<T>(
 
 /**
  * Generate a flow-mode practice line: real English words composed of
- * unlocked letters, with **length-stratified weakness sampling** (spec
- * §6.6, refined).
+ * unlocked letters, with **length-stratified weakness sampling** plus
+ * a configurable injection of pure-random words.
  *
  *   1. Filter the bundled top-10k word list to words whose chars are
  *      all `allowed` and whose length is in `[minLength, maxLength]`.
  *   2. Bucket candidates by length. For each bucket, score every word
- *      with `scoreWord` (which combines bigram error + bigram slowness
- *      + trigram error + per-word error + per-word slowness) and keep
- *      the top-`topKPerLength` most painful.
- *   3. For each emitted word: pick a length L uniformly at random from
- *      the lengths that have any candidates, then softmax-sample a
- *      word from that bucket's top-K pool. A word's weight is
- *      multiplied by `recentDecay^N` where N is its emit count so far
- *      in this call (plus one if the word is in `recent`), so small
- *      buckets naturally cycle through their words rather than
- *      repeating the top scorer.
+ *      with `scoreWord` (bigram error + bigram slowness + trigram error
+ *      + per-word error + per-word slowness) and keep a top-K "scored
+ *      pool" of the most painful. Keep the un-truncated bucket too as
+ *      the "random pool" — random picks draw from that.
+ *   3. Compute `numRandom = round(numWords × randomFraction)` and
+ *      `numScored = numWords − numRandom`. Pick that many words from
+ *      each pool — scored picks via softmax over weakness, random
+ *      picks via uniform sampling from the full bucket — then shuffle
+ *      the combined list before joining.
  *
- * Stratifying on length guarantees the output mixes 4-, 7-, 11-letter
- * words rather than collapsing to whatever length wins the global
- * scoring. Within a single length bucket, sampling is dominated by the
- * user's actual weakness signal — error rate AND speed — without any
- * corpus-frequency multiplier (that's what made cold-start flow look
- * home-row-heavy on Colemak).
+ * The same `recentDecay^N` per-emit decay applies to BOTH pools
+ * (seeded by `recent` for cross-call memory and incremented on every
+ * pick within this call), so the two streams cooperate: a word that
+ * already showed up as a scored pick is unlikely to be re-picked as a
+ * random one and vice versa.
+ *
+ * Why the random injection: the score function tends to pick the same
+ * handful of "worst" words on every call, which feels repetitive even
+ * though `recentDecay` rotates within a single call. Mixing in a
+ * fraction of unbiased samples breaks that pattern without throwing
+ * away weakness targeting — the user still spends most of the line on
+ * their actual weak spots.
  *
  * With no user data, every error rate is the Bayesian prior (~0.1) and
  * every slow_excess is 0, so all words in a bucket score equally and
- * sampling is effectively uniform within each length — a much better
- * cold-start than "always emit the most-common short home-row words".
+ * the scored stream collapses to uniform-within-length anyway.
  */
 export function generateFlowLine({
   allowed,
   userIndex,
-  numWords = 20,
+  numWords = 50,
   temperature = 0.7,
   topKPerLength = 20,
   minLength = 4,
   maxLength = 9,
   recent,
   recentDecay = 0.15,
+  randomFraction = 0.25,
   alpha = 1.0,
   beta = 0.5,
   delta = 0.5,
@@ -355,6 +370,7 @@ export function generateFlowLine({
 }: FlowOptions): string {
   const lo = Math.max(1, minLength);
   const hi = Math.max(lo, maxLength);
+  const rf = Math.max(0, Math.min(1, randomFraction));
 
   const candidates = wordsUsingOnly(allowed, lo);
   if (candidates.length === 0) return '';
@@ -375,52 +391,84 @@ export function generateFlowLine({
 
   type ScoredWord = { word: string; score: number };
   const poolByLength = new Map<number, ScoredWord[]>();
+  const fullByLength = new Map<number, string[]>();
   for (const { word } of candidates) {
     if (word.length > hi) continue;
-    let bucket = poolByLength.get(word.length);
-    if (!bucket) {
-      bucket = [];
-      poolByLength.set(word.length, bucket);
+    let scored = poolByLength.get(word.length);
+    if (!scored) {
+      scored = [];
+      poolByLength.set(word.length, scored);
     }
-    bucket.push({ word, score: scoreWord(word, userIndex, params) });
+    scored.push({ word, score: scoreWord(word, userIndex, params) });
+
+    let full = fullByLength.get(word.length);
+    if (!full) {
+      full = [];
+      fullByLength.set(word.length, full);
+    }
+    full.push(word);
   }
   for (const bucket of poolByLength.values()) {
     bucket.sort((a, b) => b.score - a.score);
     if (bucket.length > topKPerLength) bucket.length = topKPerLength;
   }
 
-  // Drop length buckets that have only one candidate: the recent-decay
-  // mechanism can't redirect picks within a 1-item softmax, so a tiny
-  // bucket would just spam its single word every time L was chosen. If
-  // EVERY bucket has only one candidate (very restricted allowed set),
-  // fall back to including them all so we still produce output.
-  let lengths = Array.from(poolByLength.keys()).filter(
+  // Drop length buckets that have only one candidate from the SCORED
+  // stream: the recent-decay mechanism can't redirect picks within a
+  // 1-item softmax, so a tiny bucket would just spam its single word.
+  // The random stream doesn't have this problem (uniform over the full
+  // bucket) so it keeps its own un-filtered length set.
+  let scoredLengths = Array.from(poolByLength.keys()).filter(
     (L) => poolByLength.get(L)!.length >= 2,
   );
-  if (lengths.length === 0) lengths = Array.from(poolByLength.keys());
-  if (lengths.length === 0) return '';
+  if (scoredLengths.length === 0) scoredLengths = Array.from(poolByLength.keys());
+  const randomLengths = Array.from(fullByLength.keys());
+  if (scoredLengths.length === 0 && randomLengths.length === 0) return '';
 
   // Per-call emit-count map (seeded from `recent`). Each emit of a word
   // multiplies its weight by `recentDecay`, so within a single call we
-  // cycle through the bucket rather than spamming the top scorer.
+  // cycle through variety rather than spamming the top scorer.
   const emitCount = new Map<string, number>();
   if (recent) for (const w of recent) emitCount.set(w, 1);
 
+  const numRandomTarget = Math.round(numWords * rf);
+  const numRandom =
+    randomLengths.length > 0 ? numRandomTarget : 0;
+  const numScored = Math.max(0, numWords - numRandom);
+
   const out: string[] = [];
 
-  for (let i = 0; i < numWords; i++) {
-    const L = lengths[Math.floor(rng() * lengths.length)];
+  for (let i = 0; i < numScored; i++) {
+    if (scoredLengths.length === 0) break;
+    const L = scoredLengths[Math.floor(rng() * scoredLengths.length)];
     const pool = poolByLength.get(L)!;
-
     const items = pool.map((p) => p.word);
     const weights = pool.map((p) => {
       const c = emitCount.get(p.word) ?? 0;
       return c === 0 ? p.score : p.score * Math.pow(recentDecay, c);
     });
-
     const pick = softmaxSample(items, weights, temperature, rng);
     out.push(pick);
     emitCount.set(pick, (emitCount.get(pick) ?? 0) + 1);
+  }
+
+  for (let i = 0; i < numRandom; i++) {
+    const L = randomLengths[Math.floor(rng() * randomLengths.length)];
+    const pool = fullByLength.get(L)!;
+    const weights = pool.map((w) => {
+      const c = emitCount.get(w) ?? 0;
+      return c === 0 ? 1 : Math.pow(recentDecay, c);
+    });
+    const pick = softmaxSample(pool, weights, temperature, rng);
+    out.push(pick);
+    emitCount.set(pick, (emitCount.get(pick) ?? 0) + 1);
+  }
+
+  // Fisher-Yates shuffle so the random picks are interleaved with
+  // scored picks rather than tacked onto the end.
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
   }
 
   return out.join(' ');

@@ -92,11 +92,16 @@ function renderChar(cd: CharData, i: number, cursor: number): JSX.Element {
   );
 }
 
+/** Words the flow generator will treat as "recently emitted" — keeps
+ * the same handful of weak words from re-surfacing in every chunk. */
+const RECENT_FLOW_BUFFER = 40;
+
 /** Build the next sentence based on mode + unlocked + user weakness. */
 function buildSentence(
   mode: Mode,
   unlocked: ReadonlySet<string>,
   ngramRows: readonly NgramStat[],
+  recent?: ReadonlySet<string>,
 ): string {
   if (unlocked.size === 0) {
     return 'finish onboarding to start practicing';
@@ -112,7 +117,8 @@ function buildSentence(
   return generateFlowLine({
     allowed: unlocked,
     userIndex,
-    numWords: 20,
+    numWords: 50,
+    recent,
   });
 }
 
@@ -288,6 +294,9 @@ export default function PracticePage(): JSX.Element {
 
   const ngramTrackerRef = useRef<NgramTracker | null>(null);
   const lastKeypressTimeRef = useRef<number | null>(null);
+  // Ring buffer of recently emitted flow words. Passed back into the
+  // generator so the same weak words don't re-surface every chunk.
+  const recentFlowWordsRef = useRef<string[]>([]);
 
   // Stable ref copies for the document-level keydown handler
   const cursorRef = useRef(cursor);
@@ -305,14 +314,25 @@ export default function PracticePage(): JSX.Element {
   const [streamKey, setStreamKey] = useState(0);
 
   // ─── Reset session ───────────────────────────────────────────────────────
+  const pushRecentFlowWords = useCallback((words: readonly string[]) => {
+    const buf = recentFlowWordsRef.current;
+    for (const w of words) buf.push(w);
+    if (buf.length > RECENT_FLOW_BUFFER) {
+      buf.splice(0, buf.length - RECENT_FLOW_BUFFER);
+    }
+  }, []);
+
   const resetSession = useCallback(() => {
     if (!activeProgress || unlockedSet.size === 0 || (ngramRows == null)) {
       return;
     }
-    const s =
-      buildSentence(mode, unlockedSet, ngramRows) +
-      ' ' +
-      buildSentence(mode, unlockedSet, ngramRows);
+    const recent1 = new Set(recentFlowWordsRef.current);
+    const s1 = buildSentence(mode, unlockedSet, ngramRows, recent1);
+    if (mode === 'flow') pushRecentFlowWords(s1.split(' '));
+    const recent2 = new Set(recentFlowWordsRef.current);
+    const s2 = buildSentence(mode, unlockedSet, ngramRows, recent2);
+    if (mode === 'flow') pushRecentFlowWords(s2.split(' '));
+    const s = s1 + ' ' + s2;
     setSentence(s);
     setCharData(initCharData(s));
     setCursor(0);
@@ -332,7 +352,7 @@ export default function PracticePage(): JSX.Element {
     } else {
       ngramTrackerRef.current = null;
     }
-  }, [activeProgress?.layout_id, mode, unlockedSet, ngramRows]);
+  }, [activeProgress?.layout_id, mode, unlockedSet, ngramRows, pushRecentFlowWords]);
 
   useEffect(() => {
     if (!sentence && activeProgress && unlockedSet.size > 0 && ngramRows) {
@@ -382,10 +402,13 @@ export default function PracticePage(): JSX.Element {
 
   const appendNextChunk = useCallback(() => {
     if (!ngramRows || unlockedSet.size === 0) return;
-    const more = ' ' + buildSentence(mode, unlockedSet, ngramRows);
+    const recent = new Set(recentFlowWordsRef.current);
+    const next = buildSentence(mode, unlockedSet, ngramRows, recent);
+    if (mode === 'flow') pushRecentFlowWords(next.split(' '));
+    const more = ' ' + next;
     setSentence((prev) => prev + more);
     setCharData((prev) => [...prev, ...initCharData(more)]);
-  }, [mode, unlockedSet, ngramRows]);
+  }, [mode, unlockedSet, ngramRows, pushRecentFlowWords]);
 
   // ─── End session (flush + persist + reset) ───────────────────────────────
   const endSession = useCallback(async () => {
