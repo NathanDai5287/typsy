@@ -23,28 +23,21 @@ import LoginPage from './pages/LoginPage.tsx';
  * (bottom). The keymap provider wraps everything so any descendant can
  * register page-level shortcuts and they show up in the help overlay.
  *
- * Auth gate: while Firebase resolves the auth state we show a loading
- * splash; if no user is signed in (and we aren't in BYPASS_AUTH dev mode)
- * we render LoginPage instead of the app shell. Only after a verified
- * sign-in do we issue the /api/user fetch.
+ * Auth gate: `signedIn` is true when bypassed, when Firebase has
+ * confirmed a user, or optimistically when localStorage holds a
+ * cached-session hint. The optimistic case lets returning users skip the
+ * "signing in…" splash on reload while Firebase rehydrates. If signed
+ * out we render LoginPage instead. Only once signed in do we issue the
+ * /api/user fetch.
  */
 export default function App(): JSX.Element {
-  const { user, loading: authLoading, bypassed } = useAuth();
-  const signedIn = bypassed || !!user;
+  const { signedIn } = useAuth();
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['user'],
     queryFn: fetchUser,
     enabled: signedIn,
   });
-
-  if (authLoading) {
-    return (
-      <div className="flex h-screen items-center justify-center text-fg3 font-mono">
-        signing in…
-      </div>
-    );
-  }
 
   if (!signedIn) {
     return <LoginPage />;

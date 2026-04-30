@@ -6,6 +6,14 @@
  * The provider subscribes to `onAuthStateChanged` so the UI re-renders
  * immediately when the user signs in or the SDK refreshes the token.
  *
+ * On boot, we read a localStorage hint (`typsy:was-signed-in`) synchronously
+ * and optimistically treat the user as signed in if it's set. That lets the
+ * app shell render immediately on reload instead of flashing a "signing in…"
+ * splash while Firebase rehydrates its persisted session (which can stretch
+ * to ~500ms when a near-expiry ID token gets refreshed). The hint is updated
+ * whenever onAuthStateChanged fires, so a sign-out elsewhere clears it for
+ * the next reload.
+ *
  * `BYPASS_AUTH` mode (mirror of the server flag): if
  * `VITE_BYPASS_AUTH=1`, this provider skips Firebase entirely and
  * pretends the user is signed in. Useful for local dev that wants to
@@ -28,9 +36,13 @@ import {
 import { getFirebaseAuth, googleProvider } from './firebase.ts';
 
 interface AuthContextValue {
-  /** null while loading, false after we've confirmed nobody is signed in. */
   user: FirebaseUser | null;
-  loading: boolean;
+  /**
+   * True when bypassed, when a real user is loaded, or while we are
+   * optimistically rendering based on a cached-session hint. Use this
+   * to gate app-shell vs login rendering.
+   */
+  signedIn: boolean;
   bypassed: boolean;
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -42,9 +54,38 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 const BYPASS = import.meta.env.VITE_BYPASS_AUTH === '1';
 
+// Set to '1' in localStorage whenever onAuthStateChanged fires with a
+// non-null user, removed when it fires with null. We persist our own hint
+// instead of probing Firebase's internal keys because those depend on
+// which persistence backend (IndexedDB vs localStorage) Firebase chose,
+// which varies across SDK versions and browser modes.
+const SIGNED_IN_HINT_KEY = 'typsy:was-signed-in';
+
+function readSignedInHint(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.localStorage.getItem(SIGNED_IN_HINT_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeSignedInHint(signedIn: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (signedIn) window.localStorage.setItem(SIGNED_IN_HINT_KEY, '1');
+    else window.localStorage.removeItem(SIGNED_IN_HINT_KEY);
+  } catch {
+    // localStorage may be unavailable (private mode, blocked cookies).
+    // Non-fatal — auth still works, the user just sees the splash again.
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }): JSX.Element {
   const [user, setUser] = useState<FirebaseUser | null>(null);
-  const [loading, setLoading] = useState<boolean>(!BYPASS);
+  const [optimisticSignedIn, setOptimisticSignedIn] = useState<boolean>(
+    BYPASS || readSignedInHint(),
+  );
 
   useEffect(() => {
     // Expose the SDK's currentUser.getIdToken() to the non-React api.ts
@@ -52,6 +93,12 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
     setTokenGetter(async () => {
       if (BYPASS) return null;
       const auth = getFirebaseAuth();
+      // Wait for Firebase's persisted-session load to finish before
+      // reading currentUser. Otherwise a request fired during the
+      // optimistic-render window (after the hint says "signed in" but
+      // before Firebase has rehydrated) goes without an Authorization
+      // header and the server 401s.
+      await auth.authStateReady();
       const u = auth.currentUser;
       if (!u) return null;
       return u.getIdToken();
@@ -61,14 +108,17 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
     const auth = getFirebaseAuth();
     return onAuthStateChanged(auth, (u) => {
       setUser(u);
-      setLoading(false);
+      setOptimisticSignedIn(!!u);
+      writeSignedInHint(!!u);
     });
   }, []);
+
+  const signedIn = BYPASS || !!user || optimisticSignedIn;
 
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
-      loading,
+      signedIn,
       bypassed: BYPASS,
       signIn: async () => {
         if (BYPASS) return;
@@ -83,12 +133,13 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
       getIdToken: async () => {
         if (BYPASS) return null;
         const auth = getFirebaseAuth();
+        await auth.authStateReady();
         const u = auth.currentUser;
         if (!u) return null;
         return u.getIdToken();
       },
     }),
-    [user, loading],
+    [user, signedIn],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
