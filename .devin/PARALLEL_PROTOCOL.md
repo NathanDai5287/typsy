@@ -24,14 +24,15 @@ You are one of several Devin instances working on this repo simultaneously, each
 ## Shutdown sequence (do these IN ORDER when the task is complete)
 1. Run the verification sequence from `.devin/knowledge.md`.
 2. If you learned something future instances should know (new gotcha, missing convention, wrong path), append a note to `.devin/knowledge.md` as part of your PR.
-3. Push the branch and open a regular PR (NOT draft) against `main` titled `[<slug>] <one-line summary>`. From here everything is automatic:
+3. **Before opening the PR, print a plain-English summary of every file changed and what changed in it. Wait for the user to reply "yes" (or equivalent approval) before proceeding.** Do not open the PR until you have explicit confirmation.
+4. Push the branch and open a regular PR (NOT draft) against `main` titled `[<slug>] <one-line summary>`. From here everything is automatic:
    - **CI** runs build + test on the head commit.
    - The `enqueue` job in CI calls `gh pr merge --auto --merge --delete-branch`, so GitHub merges the PR (or runs it through the merge queue if configured) as soon as required checks pass and the branch is deleted.
    - If a merge queue is configured, it re-runs CI on `main + previously-queued PRs + this PR` and merges only if the combined state is green.
    - If CI is red on the PR head, fix and push again.
    - If the merge queue's combined-state CI fails (semantic conflict with a sibling PR), GitHub kicks the PR out and notifies. Rebase against `main`, push, and the cycle restarts.
    - Do NOT run `gh pr merge` or mark anything yourself. The human gate was your "yes" at commit/push time.
-4. Your lock should already be released (it gets released in the commit/push step above). Run `scripts/devin-locks.sh list` to confirm — if your slug is still listed (e.g. you abandoned the task without ever pushing), run `scripts/devin-locks.sh release <slug>`. Release is idempotent.
+5. Your lock should already be released (it gets released in the commit/push step above). Run `scripts/devin-locks.sh list` to confirm — if your slug is still listed (e.g. you abandoned the task without ever pushing), run `scripts/devin-locks.sh release <slug>`. Release is idempotent.
 
 ## If you crash or get interrupted
 The user can run `scripts/devin-locks.sh force-unlock <slug>` to clean up a single stale claim. Locks auto-expire after 8 hours, but don't rely on that. If the lock file is in a bad state across the board (e.g. several crashed sessions, weird artifacts) and the user has confirmed no Devin instances are running, they can run `scripts/devin-locks.sh reset` to wipe every claim at once. Never run `reset` while another instance is mid-task.
