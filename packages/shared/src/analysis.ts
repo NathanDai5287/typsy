@@ -133,6 +133,27 @@ export function buildErrorHeatmap(ngramRows: readonly NgramStat[]): Map<string, 
   return map;
 }
 
+export interface KeyStat {
+  wpm: number;
+  accuracy: number;
+}
+
+/**
+ * Char → { wpm, accuracy } for char1 stats only. Useful for showing per-key
+ * WPM and accuracy on hover in the weakness heatmap.
+ */
+export function buildKeyStats(ngramRows: readonly NgramStat[]): Map<string, KeyStat> {
+  const map = new Map<string, KeyStat>();
+  for (const row of ngramRows) {
+    if (row.ngram_type !== 'char1') continue;
+    const meanMs = row.hits > 0 ? row.total_time_ms / row.hits : 0;
+    const wpm = meanMs > 0 ? 60_000 / (meanMs * CHARS_PER_WORD) : 0;
+    const accuracy = smoothedAccuracy(row.hits, row.misses);
+    map.set(row.ngram, { wpm, accuracy });
+  }
+  return map;
+}
+
 // ─── Top weak ngrams ───────────────────────────────────────────────────────
 
 export interface WeakNgram {

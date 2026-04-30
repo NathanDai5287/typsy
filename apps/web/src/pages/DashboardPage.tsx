@@ -10,6 +10,7 @@ import {
 import {
   buildErrorHeatmap,
   buildFingerMap,
+  buildKeyStats,
   dayStreak,
   findWordsWithBigram,
   perFingerStats,
@@ -126,6 +127,7 @@ export default function DashboardPage(): JSX.Element {
   );
   const sfb = useMemo(() => sfbRate(ngramRows ?? [], fingerMap), [ngramRows, fingerMap]);
   const heatmap = useMemo(() => buildErrorHeatmap(ngramRows ?? []), [ngramRows]);
+  const keyStats = useMemo(() => buildKeyStats(ngramRows ?? []), [ngramRows]);
   const topChars = useMemo(() => {
     const rows = topWeakNgrams(ngramRows ?? [], 'char2', 10);
     // Exclude whitespace bigrams like "r " which can appear as single chars or empty
@@ -359,6 +361,7 @@ export default function DashboardPage(): JSX.Element {
           positions={positions}
           posFingerMap={posFingerMap}
           heat={heatmap}
+          keyStats={keyStats}
         />
       </section>
 
