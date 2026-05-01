@@ -257,23 +257,28 @@ export function KeymapProvider({ children }: KeymapProviderProps): JSX.Element {
   const subscribedGlobalBindings = useMemo(() => [helpBinding], [helpBinding]);
   useKeymap(subscribedGlobalBindings, layer === 'content' && !isHelpOpen);
 
-  // ─── Esc → enter navbar layer ───────────────────────────────────────
-  // Lives on `window` at bubble phase rather than alongside the rest of
-  // the global keymap so a page that binds Esc (e.g. Practice's "end
-  // session") wins unconditionally — its document-level listener fires
-  // before the event reaches window, and its `stopImmediatePropagation`
-  // halts further propagation. Pages that don't bind Esc let the event
-  // bubble out, where this handler picks it up. The help overlay's own
-  // capture-phase listener intercepts Esc earlier when it's open.
+  // ─── Esc → enter navbar layer (highest priority) ────────────────────
+  // Capture-phase, document-level: runs BEFORE any page binding so no
+  // page handler can shadow the navbar gesture. We deliberately don't
+  // call `stopImmediatePropagation` — page-level Esc handlers (e.g.
+  // Practice's "end session", Layouts' "cancel delete confirmation")
+  // still fire afterwards in bubble phase, so the user gets both
+  // behaviours from one keystroke. The help overlay registers its own
+  // capture-phase listener AFTER this, so when it's open it preempts
+  // and closes itself instead.
   useEffect(() => {
     if (layer !== 'content' || isHelpOpen) return;
     const handler = (e: KeyboardEvent) => {
       if (e.code !== 'Escape') return;
       if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+      // Skip when there is no navbar mounted (e.g. /onboarding) —
+      // entering the navbar layer would silently swallow keystrokes
+      // with no visible affordance.
+      if (!document.querySelector('[data-navbar-layer-root]')) return;
       enterNavbarLayer();
     };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+    document.addEventListener('keydown', handler, true);
+    return () => document.removeEventListener('keydown', handler, true);
   }, [layer, isHelpOpen, enterNavbarLayer]);
 
   // While the help overlay is open, Esc and `?` both close it. Handled

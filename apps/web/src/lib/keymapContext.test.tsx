@@ -139,6 +139,7 @@ describe('KeymapProvider', () => {
       <QueryClientProvider client={makeQueryClient()}>
         <MemoryRouter initialEntries={['/']}>
           <KeymapProvider>
+            <div data-navbar-layer-root>nav</div>
             <Probe />
           </KeymapProvider>
         </MemoryRouter>
@@ -150,6 +151,30 @@ describe('KeymapProvider', () => {
       fireEvent.keyDown(document, { code: 'Escape' });
     });
     expect(layer).toBe('navbar');
+  });
+
+  it('Esc is a no-op when no navbar is mounted (e.g. /onboarding)', () => {
+    let layer = 'content';
+    function Probe(): JSX.Element {
+      const k = useKeymapRegistry();
+      layer = k.layer;
+      return <div>probe</div>;
+    }
+
+    render(
+      <QueryClientProvider client={makeQueryClient()}>
+        <MemoryRouter initialEntries={['/']}>
+          <KeymapProvider>
+            <Probe />
+          </KeymapProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    act(() => {
+      fireEvent.keyDown(document, { code: 'Escape' });
+    });
+    expect(layer).toBe('content');
   });
 
   it('arrow keys walk between tabs in the navbar layer and Enter returns to content', () => {
@@ -167,6 +192,7 @@ describe('KeymapProvider', () => {
       <QueryClientProvider client={makeQueryClient()}>
         <MemoryRouter initialEntries={['/']}>
           <KeymapProvider>
+            <div data-navbar-layer-root>nav</div>
             <Routes>
               <Route path="/" element={<Probe />} />
               <Route path="/dashboard" element={<Probe />} />
