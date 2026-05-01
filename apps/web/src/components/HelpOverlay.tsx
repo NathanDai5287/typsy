@@ -37,10 +37,19 @@ export default function HelpOverlay(): JSX.Element | null {
           )}
           <Section title="Global" bindings={registry.global} />
           <ManualSection
+            title="Navbar focus layer"
+            rows={[
+              ['Esc', 'Lift focus to the navbar from any page'],
+              ['← / →', 'Walk between top tabs'],
+              ['Enter', 'Drop back to the page content'],
+              ['Esc', 'Cancel and return to content'],
+            ]}
+          />
+          <ManualSection
             title="Practice typing"
             rows={[
               ['Type any letter', 'Counts toward the active session'],
-              ['Esc', 'End the session (saves stats in flow mode)'],
+              ['Esc', 'End the session and focus the navbar'],
               ['Tab', 'Toggle Flow ↔ Drill'],
               ['\\', 'Toggle on-screen keyboard'],
             ]}

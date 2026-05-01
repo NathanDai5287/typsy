@@ -156,7 +156,7 @@ export default function FingeringEditor({
 
   // ─── Keyboard bindings (page-level) ─────────────────────────────────
   // These run via `useKeymap` so they coexist with the global keymap
-  // (?, g <letter>, etc.) without competing.
+  // (? for help, Esc to focus the navbar) without competing.
   const bindings = useMemo<Keybinding[]>(() => {
     const moveAndOpen = (dRow: number, dCol: number) => () => {
       // Close the picker when moving — the user wants to pick a different key.
