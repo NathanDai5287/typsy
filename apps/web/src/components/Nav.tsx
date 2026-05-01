@@ -29,7 +29,7 @@ export default function Nav(): JSX.Element {
       aria-label="Primary"
       data-navbar-layer-root
       className={[
-        'border-b px-4 h-9 flex items-center gap-1 text-sm select-none transition-colors',
+        'sticky top-0 z-30 border-b px-4 h-9 flex items-center gap-1 text-sm select-none transition-colors',
         navbarActive
           ? 'bg-bg0 border-yellow-400 shadow-[inset_0_1px_0_0_rgba(250,189,47,0.6)]'
           : 'bg-bg_h border-bg4',
