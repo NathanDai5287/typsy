@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   deleteLayout,
@@ -74,34 +74,98 @@ export default function LayoutsPage(): JSX.Element {
     el?.scrollIntoView({ block: 'nearest' });
   }, [selectedIndex, selected]);
 
+  // ─── Grid-aware movement ───────────────────────────────────────────
+  // The cards live in a CSS grid that flips between 1 and 2 columns at
+  // the `md` breakpoint. We don't hard-code the breakpoint — instead we
+  // measure the rendered cards' offsetTop to derive the current column
+  // count. Up/Down then jumps `cols` slots at a time; Left/Right jumps
+  // by one. Clamped at the edges so the user can't fall off the grid.
+  const move = useCallback((direction: 'up' | 'down' | 'left' | 'right') => {
+    setSelectedIndex((i) => {
+      const list = stateRef.current.items;
+      if (list.length === 0) return i;
+
+      const els = list
+        .map((s) => cardRefs.current.get(s.layout.id))
+        .filter((el): el is HTMLDivElement => !!el);
+      let cols = 1;
+      if (els.length > 1) {
+        const firstTop = els[0].offsetTop;
+        for (let k = 1; k < els.length; k++) {
+          if (els[k].offsetTop !== firstTop) break;
+          cols++;
+        }
+      }
+
+      const last = list.length - 1;
+      switch (direction) {
+        case 'right':
+          return Math.min(last, i + 1);
+        case 'left':
+          return Math.max(0, i - 1);
+        case 'down': {
+          const next = i + cols;
+          // No row below: stay put rather than jumping to the same row.
+          return next > last ? i : next;
+        }
+        case 'up': {
+          const prev = i - cols;
+          return prev < 0 ? i : prev;
+        }
+      }
+    });
+  }, []);
+
   // ─── Keymap ───────────────────────────────────────────────────────
   const bindings = useMemo<Keybinding[]>(
     () => [
       {
-        id: 'layouts.next',
-        code: 'KeyJ',
-        description: 'Next layout',
-        handler: () =>
-          setSelectedIndex((i) => Math.min(stateRef.current.items.length - 1, i + 1)),
+        id: 'layouts.right',
+        code: 'KeyL',
+        description: 'Move selection →',
+        handler: () => move('right'),
       },
       {
-        id: 'layouts.prev',
+        id: 'layouts.left',
+        code: 'KeyH',
+        description: 'Move selection ←',
+        handler: () => move('left'),
+      },
+      {
+        id: 'layouts.down',
+        code: 'KeyJ',
+        description: 'Move selection ↓',
+        handler: () => move('down'),
+      },
+      {
+        id: 'layouts.up',
         code: 'KeyK',
-        description: 'Previous layout',
-        handler: () => setSelectedIndex((i) => Math.max(0, i - 1)),
+        description: 'Move selection ↑',
+        handler: () => move('up'),
+      },
+      {
+        id: 'layouts.aright',
+        code: 'ArrowRight',
+        description: 'Move selection →',
+        handler: () => move('right'),
+      },
+      {
+        id: 'layouts.aleft',
+        code: 'ArrowLeft',
+        description: 'Move selection ←',
+        handler: () => move('left'),
       },
       {
         id: 'layouts.adown',
         code: 'ArrowDown',
-        description: 'Next layout',
-        handler: () =>
-          setSelectedIndex((i) => Math.min(stateRef.current.items.length - 1, i + 1)),
+        description: 'Move selection ↓',
+        handler: () => move('down'),
       },
       {
         id: 'layouts.aup',
         code: 'ArrowUp',
-        description: 'Previous layout',
-        handler: () => setSelectedIndex((i) => Math.max(0, i - 1)),
+        description: 'Move selection ↑',
+        handler: () => move('up'),
       },
       {
         id: 'layouts.activate',
@@ -150,7 +214,7 @@ export default function LayoutsPage(): JSX.Element {
         handler: () => setConfirmingDeleteId(null),
       },
     ],
-    [onboard, setActive, updateProgress, remove],
+    [move, onboard, setActive, updateProgress, remove],
   );
   useRegisterPageKeymap('Layouts', bindings, !isLoading && items.length > 0);
 
@@ -167,7 +231,7 @@ export default function LayoutsPage(): JSX.Element {
       <header>
         <h1 className="text-xl text-fg_h">layouts</h1>
         <p className="text-fg3 text-sm mt-0.5">
-          <kbd className="kbd">j</kbd>/<kbd className="kbd">k</kbd> select ·{' '}
+          <kbd className="kbd">h</kbd>/<kbd className="kbd">j</kbd>/<kbd className="kbd">k</kbd>/<kbd className="kbd">l</kbd> or arrows move ·{' '}
           <kbd className="kbd">Enter</kbd> switch / setup ·{' '}
           <kbd className="kbd">m</kbd> toggle daily ·{' '}
           <kbd className="kbd">x</kbd> delete (custom)

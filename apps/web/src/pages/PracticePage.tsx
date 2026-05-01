@@ -124,7 +124,7 @@ function buildSentence(
 
 export default function PracticePage(): JSX.Element {
   const queryClient = useQueryClient();
-  const { layer, enterNavbarLayer } = useKeymapRegistry();
+  const { layer } = useKeymapRegistry();
 
   const { data: userData } = useQuery({ queryKey: ['user'], queryFn: fetchUser });
   const { data: layouts } = useQuery({ queryKey: ['layouts'], queryFn: fetchLayouts });
@@ -510,10 +510,9 @@ export default function PracticePage(): JSX.Element {
       {
         id: 'practice.end',
         code: 'Escape',
-        description: 'End session and focus the navbar',
+        description: 'End session (the global Esc binding also focuses the navbar)',
         handler: () => {
           void endSession();
-          enterNavbarLayer();
         },
         allowInInput: true,
       },
@@ -543,7 +542,7 @@ export default function PracticePage(): JSX.Element {
         handler: () => void handleLockLast(),
       },
     ],
-    [endSession, enterNavbarLayer, changeMode, mode, handleUnlockNext, handleLockLast],
+    [endSession, changeMode, mode, handleUnlockNext, handleLockLast],
   );
   useRegisterPageKeymap('Practice', pageBindings);
 
@@ -696,9 +695,12 @@ export default function PracticePage(): JSX.Element {
       )}
 
       {/* Typing area — fixed-height 3-line window that scrolls
-          monkeytype-style. Sharp single-pixel border, no rounded corners. */}
+          monkeytype-style. Sharp single-pixel border, no rounded corners.
+          When the navbar focus layer is active the area is dimmed/blurred
+          and a "Press Enter to focus" affordance overlays it, mirroring
+          Monkeytype's modal feel. */}
       <div
-        className="w-full max-w-3xl panel px-6 py-6 text-2xl leading-relaxed overflow-hidden"
+        className="relative w-full max-w-3xl panel px-6 py-6 text-2xl leading-relaxed overflow-hidden"
         style={{ height: 'calc(2.4375rem * 3 + 3rem)' }}
         role="region"
         aria-label="Typing practice area"
@@ -706,7 +708,10 @@ export default function PracticePage(): JSX.Element {
         <div
           ref={innerRef}
           key={streamKey}
-          className="font-mono"
+          className={[
+            'font-mono transition-[filter,opacity] duration-150',
+            layer === 'navbar' ? 'blur-sm opacity-40' : '',
+          ].join(' ')}
           style={{
             transform: `translateY(-${scrollY}px)`,
             transition: 'transform 80ms linear',
@@ -714,6 +719,7 @@ export default function PracticePage(): JSX.Element {
           }}
           aria-live="polite"
           aria-label="Text to type"
+          aria-hidden={layer === 'navbar' ? 'true' : undefined}
         >
           {charData.length === 0 ? (
             <span className="text-fg4">loading…</span>
@@ -729,6 +735,17 @@ export default function PracticePage(): JSX.Element {
             )
           )}
         </div>
+        {layer === 'navbar' && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="pointer-events-none absolute inset-0 flex items-center justify-center"
+          >
+            <span className="text-base font-mono text-fg_h bg-bg_h/80 px-3 py-1 border border-yellow-400 tracking-wider">
+              Press <kbd className="kbd">Enter</kbd> to focus
+            </span>
+          </div>
+        )}
       </div>
 
       {/* On-screen keyboard. When learning a layout, every alpha key is
