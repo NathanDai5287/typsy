@@ -14,7 +14,7 @@ import {
   dayStreak,
   findWordsWithBigram,
   perFingerStats,
-  sessionsAsSeries,
+  sessionsAsSmoothedSeries,
   sfbRate,
   topSlowNgrams,
   topWeakNgrams,
@@ -117,7 +117,10 @@ export default function DashboardPage(): JSX.Element {
     [positions, posFingerMap],
   );
 
-  const series = useMemo(() => sessionsAsSeries(sessions ?? []), [sessions]);
+  const series = useMemo(
+    () => sessionsAsSmoothedSeries(sessions ?? [], { window: 5 }),
+    [sessions],
+  );
   const fingerAgg = useMemo(
     () =>
       perFingerStats(ngramRows ?? [], fingerMap).filter(
