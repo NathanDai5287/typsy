@@ -6,23 +6,30 @@ import {
   useMemo,
   useState,
 } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, matchPath } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import type { Keybinding } from './keymap.ts';
 import { useKeymap } from './keymap.ts';
+import {
+  fetchLayoutSummary,
+  fetchNgramStats,
+  fetchSessions,
+  fetchUser,
+} from './api.ts';
 
 /**
- * Global keymap registry + nav-leader engine.
+ * Global keymap registry + layered focus model.
  *
  * Two responsibilities:
  *   1. Keep a list of keybindings registered by every page so the help
  *      overlay (`?`) can render an accurate, up-to-date list.
- *   2. Run the "go" leader (KeyG → wait for next code → navigate) that
- *      lets users jump between pages from anywhere — including from the
- *      practice page, which captures most other letters as typed input.
+ *   2. Run the Monkeytype-style two-layer focus state machine: pages run
+ *      in the CONTENT layer by default; pressing Esc (with nothing else
+ *      claiming it) lifts the user into the NAVBAR layer where Left/Right
+ *      walk between the top tabs and Enter drops back to CONTENT.
  *
- * The leader timing window is short (1.5s). Pressing a non-matching key
- * during that window aborts the leader without consuming the keypress so
- * the user can resume typing.
+ * The layer is owned here so any component (Nav, StatusBar, the practice
+ * typing handler) can react to it via `useKeymapRegistry()`.
  */
 
 export interface KeymapSection {
@@ -31,6 +38,8 @@ export interface KeymapSection {
   /** Bindings to display under that header. */
   bindings: readonly Keybinding[];
 }
+
+export type FocusLayer = 'content' | 'navbar';
 
 interface KeymapRegistry {
   /** Bindings shown under "Global". Populated by `KeymapProvider`. */
@@ -46,8 +55,12 @@ interface KeymapContextValue {
   openHelp: () => void;
   /** Whether the help overlay is open. */
   isHelpOpen: boolean;
-  /** Whether the leader (KeyG) is currently armed. */
-  isLeaderArmed: boolean;
+  /** Which interaction layer is currently active. */
+  layer: FocusLayer;
+  /** Lift focus to the navbar (arrow keys then walk between tabs). */
+  enterNavbarLayer: () => void;
+  /** Drop focus back to the page body. */
+  enterContentLayer: () => void;
 }
 
 const Ctx = createContext<KeymapContextValue | null>(null);
@@ -58,35 +71,65 @@ export function useKeymapRegistry(): KeymapContextValue {
   return v;
 }
 
+/**
+ * Tabs the navbar layer cycles through. Order matches the visible nav.
+ * Kept in sync with `Nav.tsx`.
+ */
+export const NAV_TABS: readonly { to: string; end?: boolean }[] = [
+  { to: '/', end: true },
+  { to: '/dashboard' },
+  { to: '/layouts' },
+  { to: '/fingering' },
+  { to: '/optimize' },
+  { to: '/settings' },
+];
+
+function findTabIndex(pathname: string): number {
+  for (let i = 0; i < NAV_TABS.length; i++) {
+    const t = NAV_TABS[i];
+    const m = matchPath({ path: t.to, end: t.end ?? false }, pathname);
+    if (m) return i;
+  }
+  return 0;
+}
+
 interface KeymapProviderProps {
   children: React.ReactNode;
 }
 
 export function KeymapProvider({ children }: KeymapProviderProps): JSX.Element {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const queryClient = useQueryClient();
   const [pageSection, setPageSection] = useState<KeymapSection | null>(null);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
-  const [isLeaderArmed, setIsLeaderArmed] = useState(false);
+  const [layer, setLayer] = useState<FocusLayer>('content');
 
-  // ─── "go" leader ─────────────────────────────────────────────────────
-  // Pressing KeyG (the QWERTY-G physical position) arms the leader. The
-  // next keypress is interpreted as a nav target. Times out after 1.5s.
-  // While armed, ALL keypresses are intercepted (so the practice page
-  // doesn't eat the second key as a typed character).
-  const armedRef = isLeaderArmed; // local copy for closure clarity
-  useEffect(() => {
-    if (!isLeaderArmed) return;
-    const id = setTimeout(() => setIsLeaderArmed(false), 1500);
-    return () => clearTimeout(id);
-  }, [armedRef]);
+  const enterNavbarLayer = useCallback(() => {
+    setLayer('navbar');
+    // If a form input has focus, blur it — arrow keys would otherwise
+    // move the caret inside the input instead of walking tabs (the
+    // capture-phase handler below would still preventDefault, but the
+    // visual cursor in the field is misleading).
+    const el = document.activeElement as HTMLElement | null;
+    if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) {
+      el.blur();
+    }
+  }, []);
+  const enterContentLayer = useCallback(() => setLayer('content'), []);
 
-  // The leader handler runs at the capture phase so it has priority over
-  // everything else (including the practice page's keydown listener).
+  // ─── Navbar layer handler ────────────────────────────────────────────
+  // While the navbar layer is active, intercept keys at capture phase so
+  // they win against the practice page's typing listener and any page
+  // bindings. Arrow keys walk between tabs; Enter / Esc drop back to
+  // content; modifiers and ? flow through so global help still works;
+  // every other key is swallowed so stray keystrokes don't bleed into
+  // pages while the user is "in the navbar".
   useEffect(() => {
-    if (!isLeaderArmed) return;
+    if (layer !== 'navbar') return;
     const handler = (e: KeyboardEvent) => {
-      // Allow modifier-only keypresses to flow through without breaking
-      // the leader (e.g. user holds Shift to find the "?" key).
+      // Allow modifier-only keypresses through (e.g. Shift held while
+      // reaching for `?`).
       if (
         e.code === 'ShiftLeft' || e.code === 'ShiftRight' ||
         e.code === 'ControlLeft' || e.code === 'ControlRight' ||
@@ -94,118 +137,144 @@ export function KeymapProvider({ children }: KeymapProviderProps): JSX.Element {
         e.code === 'MetaLeft' || e.code === 'MetaRight'
       ) return;
 
-      // The leader is consuming this key — stop ALL other listeners on
-      // document (capture and bubble) from also processing it. Without
-      // stopImmediatePropagation a `g j` chord would still trigger the
-      // bubble-phase `j` binding on a list page.
+      // ? (Shift+/) → let the global keymap toggle the help overlay.
+      if (e.code === 'Slash' && e.shiftKey) return;
+
+      if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        const idx = findTabIndex(pathname);
+        const delta = e.code === 'ArrowLeft' ? -1 : 1;
+        const next = (idx + delta + NAV_TABS.length) % NAV_TABS.length;
+        navigate(NAV_TABS[next].to);
+        return;
+      }
+
+      if (e.code === 'Enter' || e.code === 'Escape') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        setLayer('content');
+        return;
+      }
+
+      // Anything else: eat it. The user is "in the navbar"; we don't
+      // want a stray letter to type into Practice or trigger a page
+      // shortcut.
       e.preventDefault();
       e.stopImmediatePropagation();
-      setIsLeaderArmed(false);
-
-      switch (e.code) {
-        case 'KeyP': navigate('/'); return;
-        case 'KeyD': navigate('/dashboard'); return;
-        case 'KeyL': navigate('/layouts'); return;
-        case 'KeyF': navigate('/fingering'); return;
-        case 'KeyO': navigate('/optimize'); return;
-        case 'KeyS': navigate('/settings'); return;
-        case 'Escape': return; // explicit cancel
-        default: return; // any other key: just abort silently
-      }
     };
     document.addEventListener('keydown', handler, true);
     return () => document.removeEventListener('keydown', handler, true);
-  }, [isLeaderArmed, navigate]);
+  }, [layer, navigate, pathname]);
+
+  // Click anywhere outside the nav while in navbar layer → drop to content.
+  useEffect(() => {
+    if (layer !== 'navbar') return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as Element | null;
+      if (target?.closest('[data-navbar-layer-root]')) return;
+      setLayer('content');
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [layer]);
+
+  // ─── Tab prefetch ───────────────────────────────────────────────────
+  // When the user enters the navbar layer, warm the cache for every tab
+  // they might arrow-walk to. With a 30s default staleTime and the
+  // active-layout-scoped keys already populated by whichever page is
+  // mounted, a single prefetch round on layer entry is enough to keep
+  // arrow-key tab switching from re-fetching.
+  useEffect(() => {
+    if (layer !== 'navbar') return;
+    void (async () => {
+      try {
+        const user = await queryClient.ensureQueryData({
+          queryKey: ['user'],
+          queryFn: fetchUser,
+        });
+        const layoutId = user?.layout_progress[0]?.layout_id;
+        const tasks: Promise<unknown>[] = [
+          queryClient.prefetchQuery({
+            queryKey: ['layouts', 'summary'],
+            queryFn: fetchLayoutSummary,
+          }),
+        ];
+        if (layoutId) {
+          tasks.push(
+            queryClient.prefetchQuery({
+              queryKey: ['sessions', layoutId],
+              queryFn: () => fetchSessions(layoutId),
+            }),
+            queryClient.prefetchQuery({
+              queryKey: ['ngramStats', layoutId],
+              queryFn: () => fetchNgramStats(layoutId),
+            }),
+          );
+        }
+        await Promise.allSettled(tasks);
+      } catch {
+        // Prefetch is best-effort — a failure here just means the
+        // tabs will fetch on visit like they would have anyway.
+      }
+    })();
+  }, [layer, queryClient]);
 
   // ─── Global bindings ────────────────────────────────────────────────
-  // Registered with `useKeymap` here so they're always live. These bind
-  // by code so they remain layout-agnostic.
-  //
-  // Esc is intentionally NOT bound here. Closing the help overlay on Esc
-  // is handled by the capture-phase listener below (only active while
-  // `isHelpOpen`), so Esc is free to mean "end session" / "clear
-  // selection" / etc. on whatever page is currently mounted. A redundant
-  // global Esc binding here would `stopImmediatePropagation` and shadow
-  // every page-level Esc handler — which manifests as "Esc stops working
-  // after I navigate away and come back" because the global listener
-  // gets re-positioned ahead of the page's listener in the document's
-  // bubble queue on remount.
-  const armLeader = useCallback(() => setIsLeaderArmed(true), []);
   const toggleHelp = useCallback(() => setIsHelpOpen((v) => !v), []);
 
-  const globalBindings: Keybinding[] = useMemo(
-    () => [
-      {
-        id: 'global.help',
-        code: 'Slash',
-        modifiers: new Set(['shift']),
-        description: 'Show keyboard shortcuts',
-        handler: toggleHelp,
-        allowInInput: false,
-      },
-      {
-        id: 'global.leader',
-        code: 'KeyG',
-        description: 'Go to… (then press P/D/L/F/O/S)',
-        handler: armLeader,
-        allowInInput: false,
-      },
-      {
-        id: 'global.go-practice',
-        code: 'KeyP',
-        modifiers: new Set(['shift']),
-        description: 'Go to Practice (Shift+P)',
-        handler: () => navigate('/'),
-        allowInInput: false,
-      },
-      {
-        id: 'global.go-dashboard',
-        code: 'KeyD',
-        modifiers: new Set(['shift']),
-        description: 'Go to Dashboard (Shift+D)',
-        handler: () => navigate('/dashboard'),
-        allowInInput: false,
-      },
-      {
-        id: 'global.go-layouts',
-        code: 'KeyL',
-        modifiers: new Set(['shift']),
-        description: 'Go to Layouts (Shift+L)',
-        handler: () => navigate('/layouts'),
-        allowInInput: false,
-      },
-      {
-        id: 'global.go-fingering',
-        code: 'KeyF',
-        modifiers: new Set(['shift']),
-        description: 'Go to Fingering (Shift+F)',
-        handler: () => navigate('/fingering'),
-        allowInInput: false,
-      },
-      {
-        id: 'global.go-optimize',
-        code: 'KeyO',
-        modifiers: new Set(['shift']),
-        description: 'Go to Optimize (Shift+O)',
-        handler: () => navigate('/optimize'),
-        allowInInput: false,
-      },
-      {
-        id: 'global.go-settings',
-        code: 'KeyS',
-        modifiers: new Set(['shift']),
-        description: 'Go to Settings (Shift+S)',
-        handler: () => navigate('/settings'),
-        allowInInput: false,
-      },
-    ],
-    [armLeader, toggleHelp, navigate],
+  // `?` is the only global binding subscribed via the document-level
+  // keymap. It's suppressed while the navbar layer or help overlay is
+  // active — both install their own capture-phase handlers.
+  const helpBinding = useMemo<Keybinding>(
+    () => ({
+      id: 'global.help',
+      code: 'Slash',
+      modifiers: new Set(['shift']),
+      description: 'Show keyboard shortcuts',
+      handler: toggleHelp,
+      allowInInput: false,
+    }),
+    [toggleHelp],
   );
+  // Esc is a documentation-only entry: the actual handler is the
+  // window-level effect below, deliberately wired so any page that
+  // claims Esc on `document` (e.g. Practice's "end session") wins.
+  const escDocBinding = useMemo<Keybinding>(
+    () => ({
+      id: 'global.enter-navbar',
+      code: 'Escape',
+      description: 'Focus the navbar (←/→ to walk tabs, Enter to return)',
+      handler: enterNavbarLayer,
+      allowInInput: true,
+    }),
+    [enterNavbarLayer],
+  );
+  const globalBindings = useMemo(
+    () => [helpBinding, escDocBinding],
+    [helpBinding, escDocBinding],
+  );
+  const subscribedGlobalBindings = useMemo(() => [helpBinding], [helpBinding]);
+  useKeymap(subscribedGlobalBindings, layer === 'content' && !isHelpOpen);
 
-  // The leader-armed state suppresses the global "g"-prefix binding from
-  // re-arming itself: the leader effect handles all keypresses while
-  // armed, so we just disable the regular hook in that window.
-  useKeymap(globalBindings, !isLeaderArmed && !isHelpOpen);
+  // ─── Esc → enter navbar layer ───────────────────────────────────────
+  // Lives on `window` at bubble phase rather than alongside the rest of
+  // the global keymap so a page that binds Esc (e.g. Practice's "end
+  // session") wins unconditionally — its document-level listener fires
+  // before the event reaches window, and its `stopImmediatePropagation`
+  // halts further propagation. Pages that don't bind Esc let the event
+  // bubble out, where this handler picks it up. The help overlay's own
+  // capture-phase listener intercepts Esc earlier when it's open.
+  useEffect(() => {
+    if (layer !== 'content' || isHelpOpen) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.code !== 'Escape') return;
+      if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+      enterNavbarLayer();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [layer, isHelpOpen, enterNavbarLayer]);
 
   // While the help overlay is open, Esc and `?` both close it. Handled
   // at capture phase + stopImmediatePropagation so the keypress does NOT
@@ -230,9 +299,11 @@ export function KeymapProvider({ children }: KeymapProviderProps): JSX.Element {
       registerPage: setPageSection,
       openHelp: () => setIsHelpOpen(true),
       isHelpOpen,
-      isLeaderArmed,
+      layer,
+      enterNavbarLayer,
+      enterContentLayer,
     }),
-    [globalBindings, pageSection, isHelpOpen, isLeaderArmed],
+    [globalBindings, pageSection, isHelpOpen, layer, enterNavbarLayer, enterContentLayer],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

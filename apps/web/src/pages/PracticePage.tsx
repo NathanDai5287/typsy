@@ -21,7 +21,7 @@ import {
 } from '@typsy/shared';
 import type { KeyPosition, NgramStat, FingerLabel } from '@typsy/shared';
 import KeyboardVisual from '../components/KeyboardVisual.tsx';
-import { useRegisterPageKeymap } from '../lib/keymapContext.tsx';
+import { useKeymapRegistry, useRegisterPageKeymap } from '../lib/keymapContext.tsx';
 import type { Keybinding, Modifier } from '../lib/keymap.ts';
 
 type Mode = 'drill' | 'flow';
@@ -124,6 +124,7 @@ function buildSentence(
 
 export default function PracticePage(): JSX.Element {
   const queryClient = useQueryClient();
+  const { layer, enterNavbarLayer } = useKeymapRegistry();
 
   const { data: userData } = useQuery({ queryKey: ['user'], queryFn: fetchUser });
   const { data: layouts } = useQuery({ queryKey: ['layouts'], queryFn: fetchLayouts });
@@ -509,8 +510,11 @@ export default function PracticePage(): JSX.Element {
       {
         id: 'practice.end',
         code: 'Escape',
-        description: 'End session (saves stats in flow mode)',
-        handler: () => void endSession(),
+        description: 'End session and focus the navbar',
+        handler: () => {
+          void endSession();
+          enterNavbarLayer();
+        },
         allowInInput: true,
       },
       {
@@ -539,7 +543,7 @@ export default function PracticePage(): JSX.Element {
         handler: () => void handleLockLast(),
       },
     ],
-    [endSession, changeMode, mode, handleUnlockNext, handleLockLast],
+    [endSession, enterNavbarLayer, changeMode, mode, handleUnlockNext, handleLockLast],
   );
   useRegisterPageKeymap('Practice', pageBindings);
 
@@ -550,6 +554,12 @@ export default function PracticePage(): JSX.Element {
   // global keymap without being eaten.
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
+      // While the navbar focus layer is active the user is "in the
+      // navbar" — letters should not be eaten as typed input. The
+      // KeymapProvider's capture-phase navbar handler also intercepts,
+      // but it registers later than this listener so we'd otherwise see
+      // the keystroke first. Bail here to be safe.
+      if (layer === 'navbar') return;
       const tag = (document.activeElement as HTMLElement | null)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       // Any modifier? Skip — those keys are global navigation / help etc.
@@ -562,8 +572,7 @@ export default function PracticePage(): JSX.Element {
 
       e.preventDefault();
       // Stop subsequent listeners on the document (including the bubble
-      // phase) from re-processing the same physical key. Without this,
-      // typing a `g` would also arm the global `g` nav leader.
+      // phase) from re-processing the same physical key as a shortcut.
       e.stopImmediatePropagation();
 
       const now = Date.now();
@@ -610,7 +619,7 @@ export default function PracticePage(): JSX.Element {
         }
       }
     },
-    [positionMap, appendNextChunk],
+    [layer, positionMap, appendNextChunk],
   );
 
   // Capture-phase listener so we run before the keymap context's
@@ -661,9 +670,7 @@ export default function PracticePage(): JSX.Element {
       </div>
 
       {/* End-of-session toast — fixed-position so it doesn't shift the
-          typing area / on-screen keyboard down when it appears. Mirrors
-          the placement and layering of <LeaderHint> (z-30 here so it
-          sits *under* a leader hint if both somehow coexist). */}
+          typing area / on-screen keyboard down when it appears. */}
       {lastSummary && (
         <div
           role="status"

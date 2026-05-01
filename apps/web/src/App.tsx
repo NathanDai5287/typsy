@@ -5,7 +5,6 @@ import { useAuth } from './lib/auth.tsx';
 import Nav from './components/Nav.tsx';
 import StatusBar from './components/StatusBar.tsx';
 import HelpOverlay from './components/HelpOverlay.tsx';
-import LeaderHint from './components/LeaderHint.tsx';
 import { KeymapProvider } from './lib/keymapContext.tsx';
 import OnboardingPage from './pages/OnboardingPage.tsx';
 import PracticePage from './pages/PracticePage.tsx';
@@ -87,7 +86,6 @@ export default function App(): JSX.Element {
         </main>
         {!needsOnboarding && <StatusBar />}
         <HelpOverlay />
-        <LeaderHint />
       </div>
     </KeymapProvider>
   );

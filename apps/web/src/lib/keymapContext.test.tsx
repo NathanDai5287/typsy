@@ -1,13 +1,22 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup, fireEvent, act } from '@testing-library/react';
-import { MemoryRouter, Routes, Route, useNavigate } from 'react-router-dom';
+import { MemoryRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useMemo } from 'react';
-import { KeymapProvider, useRegisterPageKeymap } from './keymapContext.tsx';
+import {
+  KeymapProvider,
+  useKeymapRegistry,
+  useRegisterPageKeymap,
+} from './keymapContext.tsx';
 import type { Keybinding } from './keymap.ts';
 
 afterEach(() => {
   cleanup();
 });
+
+function makeQueryClient(): QueryClient {
+  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+}
 
 interface PageProps {
   onEsc: () => void;
@@ -37,14 +46,16 @@ describe('KeymapProvider', () => {
   it('lets a page-level Escape binding fire on the very first mount', () => {
     const onEsc = vi.fn();
     render(
-      <MemoryRouter initialEntries={['/']}>
-        <KeymapProvider>
-          <Routes>
-            <Route path="/" element={<PageWithEsc onEsc={onEsc} />} />
-            <Route path="/other" element={<OtherPage />} />
-          </Routes>
-        </KeymapProvider>
-      </MemoryRouter>,
+      <QueryClientProvider client={makeQueryClient()}>
+        <MemoryRouter initialEntries={['/']}>
+          <KeymapProvider>
+            <Routes>
+              <Route path="/" element={<PageWithEsc onEsc={onEsc} />} />
+              <Route path="/other" element={<OtherPage />} />
+            </Routes>
+          </KeymapProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
     );
 
     fireEvent.keyDown(document, { code: 'Escape' });
@@ -52,15 +63,9 @@ describe('KeymapProvider', () => {
   });
 
   it('still routes Escape to the page handler after navigating away and back', async () => {
-    // Regression test: the global keymap used to register an `Escape →
-    // closeHelp` binding. After remounting the page (e.g. nav away → nav
-    // back), the page's bubble-phase Esc listener landed *behind* the
-    // already-installed global one in the document's listener queue, so
-    // the global handler fired first, called `stopImmediatePropagation`,
-    // and the page's "end session" / "clear selection" handler never
-    // ran. The fix removes the redundant global Esc binding (the help
-    // overlay still closes on Esc via a capture-phase effect that's only
-    // wired up while it's open).
+    // Regression test: a page's bubble-phase Esc listener must keep
+    // beating the provider's global Esc → enter-navbar binding even
+    // after the page has unmounted and remounted.
     const onEsc = vi.fn();
 
     function Switcher(): JSX.Element {
@@ -90,31 +95,30 @@ describe('KeymapProvider', () => {
     }
 
     const { getByTestId } = render(
-      <MemoryRouter initialEntries={['/']}>
-        <KeymapProvider>
-          <Switcher />
-          <Routes>
-            <Route path="/" element={<PageWithEsc onEsc={onEsc} />} />
-            <Route
-              path="/other"
-              element={
-                <>
-                  <OtherPage />
-                  <ComeBack />
-                </>
-              }
-            />
-          </Routes>
-        </KeymapProvider>
-      </MemoryRouter>,
+      <QueryClientProvider client={makeQueryClient()}>
+        <MemoryRouter initialEntries={['/']}>
+          <KeymapProvider>
+            <Switcher />
+            <Routes>
+              <Route path="/" element={<PageWithEsc onEsc={onEsc} />} />
+              <Route
+                path="/other"
+                element={
+                  <>
+                    <OtherPage />
+                    <ComeBack />
+                  </>
+                }
+              />
+            </Routes>
+          </KeymapProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
     );
 
-    // Navigate away (PracticePage equivalent unmounts).
     act(() => {
       getByTestId('go-other').click();
     });
-    // Navigate back (page remounts; its useKeymap listener is now
-    // registered AFTER the long-lived global listener).
     act(() => {
       getByTestId('go-back').click();
     });
@@ -123,28 +127,87 @@ describe('KeymapProvider', () => {
     expect(onEsc).toHaveBeenCalledTimes(1);
   });
 
-  it('does not consume Escape when the help overlay is closed', () => {
-    // A bystander listener registered AFTER the provider should still
-    // see Esc events. Before the fix, the global `closeHelp` binding
-    // called stopImmediatePropagation on every Esc regardless of overlay
-    // state, suppressing every other Esc handler in the app.
-    const bystander = vi.fn();
-    document.addEventListener('keydown', bystander);
-    try {
-      render(
+  it('Esc on a page without a page-level Esc binding lifts focus to the navbar', () => {
+    let layer = 'content';
+    function Probe(): JSX.Element {
+      const k = useKeymapRegistry();
+      layer = k.layer;
+      return <div>probe</div>;
+    }
+
+    render(
+      <QueryClientProvider client={makeQueryClient()}>
+        <MemoryRouter initialEntries={['/']}>
+          <KeymapProvider>
+            <Probe />
+          </KeymapProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    expect(layer).toBe('content');
+    act(() => {
+      fireEvent.keyDown(document, { code: 'Escape' });
+    });
+    expect(layer).toBe('navbar');
+  });
+
+  it('arrow keys walk between tabs in the navbar layer and Enter returns to content', () => {
+    let pathname = '/';
+    let layer = 'content';
+    function Probe(): JSX.Element {
+      const k = useKeymapRegistry();
+      const loc = useLocation();
+      layer = k.layer;
+      pathname = loc.pathname;
+      return <div>probe</div>;
+    }
+
+    render(
+      <QueryClientProvider client={makeQueryClient()}>
         <MemoryRouter initialEntries={['/']}>
           <KeymapProvider>
             <Routes>
-              <Route path="/" element={<OtherPage />} />
+              <Route path="/" element={<Probe />} />
+              <Route path="/dashboard" element={<Probe />} />
+              <Route path="/layouts" element={<Probe />} />
+              <Route path="/fingering" element={<Probe />} />
+              <Route path="/optimize" element={<Probe />} />
+              <Route path="/settings" element={<Probe />} />
             </Routes>
           </KeymapProvider>
-        </MemoryRouter>,
-      );
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
 
+    // Lift into navbar layer.
+    act(() => {
       fireEvent.keyDown(document, { code: 'Escape' });
-      expect(bystander).toHaveBeenCalledTimes(1);
-    } finally {
-      document.removeEventListener('keydown', bystander);
-    }
+    });
+    expect(layer).toBe('navbar');
+
+    // Right walks to /dashboard (next after /).
+    act(() => {
+      fireEvent.keyDown(document, { code: 'ArrowRight' });
+    });
+    expect(pathname).toBe('/dashboard');
+
+    // Right again → /layouts.
+    act(() => {
+      fireEvent.keyDown(document, { code: 'ArrowRight' });
+    });
+    expect(pathname).toBe('/layouts');
+
+    // Left → /dashboard.
+    act(() => {
+      fireEvent.keyDown(document, { code: 'ArrowLeft' });
+    });
+    expect(pathname).toBe('/dashboard');
+
+    // Enter drops back to content.
+    act(() => {
+      fireEvent.keyDown(document, { code: 'Enter' });
+    });
+    expect(layer).toBe('content');
   });
 });
