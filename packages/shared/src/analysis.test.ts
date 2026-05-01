@@ -9,6 +9,7 @@ import {
   totalCharsTyped,
   dayStreak,
   sessionsAsSeries,
+  sessionsAsSmoothedSeries,
 } from './analysis.js';
 import type { NgramStat, Session, KeyPosition } from './types.js';
 import { LAYOUT_DEFINITIONS, posKey } from './layouts.js';
@@ -211,13 +212,27 @@ describe('dayStreak', () => {
 describe('sessionsAsSeries', () => {
   it('returns sessions in chronological order with chart fields', () => {
     const sessions: Session[] = [
-      sess({ ended_at: '2024-01-10', wpm: 60, accuracy: 0.95, cumulative_chars_at_session_end: 200 }),
-      sess({ ended_at: '2024-01-08', wpm: 50, accuracy: 0.92, cumulative_chars_at_session_end: 100 }),
+      sess({ ended_at: '2024-01-10', wpm: 60, accuracy: 0.95, chars_typed: 200, cumulative_chars_at_session_end: 200 }),
+      sess({ ended_at: '2024-01-08', wpm: 50, accuracy: 0.92, chars_typed: 100, cumulative_chars_at_session_end: 100 }),
     ];
     const series = sessionsAsSeries(sessions);
     expect(series[0].endedAt).toEqual('2024-01-08');
     expect(series[1].endedAt).toEqual('2024-01-10');
     expect(series[1].cumulativeChars).toBe(200);
+    expect(series[1].charsTyped).toBe(200);
+  });
+});
+
+describe('sessionsAsSmoothedSeries', () => {
+  it('downweights tiny sessions when smoothing', () => {
+    const sessions: Session[] = [
+      sess({ ended_at: '2024-01-08', wpm: 100, accuracy: 1, chars_typed: 1000, cumulative_chars_at_session_end: 1000 }),
+      sess({ ended_at: '2024-01-10', wpm: 0, accuracy: 0, chars_typed: 1, cumulative_chars_at_session_end: 1001 }),
+    ];
+
+    const series = sessionsAsSmoothedSeries(sessions, { window: 2 });
+    expect(series[1].wpm).toBeGreaterThan(99);
+    expect(series[1].accuracy).toBeGreaterThan(0.99);
   });
 });
 

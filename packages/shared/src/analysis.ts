@@ -284,11 +284,13 @@ export interface SessionPoint {
   endedAt: string;
   /** Cumulative characters at session end (from the row). */
   cumulativeChars: number;
+  /** Raw chars typed in this session. */
+  charsTyped: number;
   wpm: number;
   accuracy: number;
 }
 
-/** Convert sessions to chart-friendly rows in chronological order. */
+/** Convert sessions to chart-friendly rows in chronological order (no smoothing). */
 export function sessionsAsSeries(sessions: readonly Session[]): SessionPoint[] {
   return sessions
     .slice()
@@ -296,9 +298,51 @@ export function sessionsAsSeries(sessions: readonly Session[]): SessionPoint[] {
     .map((s) => ({
       endedAt: s.ended_at,
       cumulativeChars: s.cumulative_chars_at_session_end,
+      charsTyped: s.chars_typed,
       wpm: s.wpm,
       accuracy: s.accuracy,
     }));
+}
+
+export interface SmoothSeriesOptions {
+  /** Rolling window size in sessions (inclusive). */
+  window: number;
+}
+
+/**
+ * Chart series with `wpm` + `accuracy` smoothed via a chars_typed-weighted rolling average.
+ *
+ * For each point i, we average over points [max(0, i-window+1) ... i] with weight = charsTyped.
+ * A 1-char session contributes near-zero, avoiding hard cutoffs while removing spikes.
+ */
+export function sessionsAsSmoothedSeries(
+  sessions: readonly Session[],
+  { window }: SmoothSeriesOptions,
+): SessionPoint[] {
+  const base = sessionsAsSeries(sessions);
+  const win = Math.max(1, Math.floor(window));
+
+  return base.map((p, i) => {
+    const start = Math.max(0, i - win + 1);
+    let wSum = 0;
+    let wpmSum = 0;
+    let accSum = 0;
+
+    for (let j = start; j <= i; j++) {
+      const w = base[j]!.charsTyped;
+      if (w <= 0) continue;
+      wSum += w;
+      wpmSum += base[j]!.wpm * w;
+      accSum += base[j]!.accuracy * w;
+    }
+
+    if (wSum === 0) return p;
+    return {
+      ...p,
+      wpm: wpmSum / wSum,
+      accuracy: accSum / wSum,
+    };
+  });
 }
 
 // ─── Word context for ngrams ───────────────────────────────────────────────
