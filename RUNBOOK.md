@@ -319,7 +319,7 @@ data between `apps/server/data/typsy.db` (your Mac) and
 `/home/natha/Programming/typsy/apps/server/data/typsy.db` (minmus). Use
 these patterns when you need to.
 
-There is also a small helper script for common production DB operations:
+There is also a small helper script for common production DB operations (run it on the production backend box):
 
 ```bash
 # Create a production backup (WAL-safe) under apps/server/data/backups/YYYY/MM/
