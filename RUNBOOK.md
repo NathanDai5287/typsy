@@ -319,6 +319,19 @@ data between `apps/server/data/typsy.db` (your Mac) and
 `/home/natha/Programming/typsy/apps/server/data/typsy.db` (minmus). Use
 these patterns when you need to.
 
+There is also a small helper script for common production DB operations:
+
+```bash
+# Create a production backup (WAL-safe) under apps/server/data/backups/YYYY/MM/
+scripts/prod-db.sh backup
+
+# List available backups
+scripts/prod-db.sh list
+
+# Restore a specific backup (DESTRUCTIVE; stops/starts typsy.service)
+scripts/prod-db.sh restore /home/natha/Programming/typsy/apps/server/data/backups/YYYY/MM/typsy-<ts>.db --yes
+```
+
 ### Pull live prod DB → local (read-only-side; safe; doesn't touch prod)
 
 Use `sqlite3 .backup` rather than a raw `cp`. `.backup` is online,
