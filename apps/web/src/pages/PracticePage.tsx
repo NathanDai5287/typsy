@@ -124,7 +124,7 @@ function buildSentence(
 
 export default function PracticePage(): JSX.Element {
   const queryClient = useQueryClient();
-  const { layer } = useKeymapRegistry();
+  const { layer, registerNavbarEscapeGuard } = useKeymapRegistry();
 
   const { data: userData } = useQuery({ queryKey: ['user'], queryFn: fetchUser });
   const { data: layouts } = useQuery({ queryKey: ['layouts'], queryFn: fetchLayouts });
@@ -334,6 +334,10 @@ export default function PracticePage(): JSX.Element {
     const s2 = buildSentence(mode, unlockedSet, ngramRows, recent2);
     if (mode === 'flow') pushRecentFlowWords(s2.split(' '));
     const s = s1 + ' ' + s2;
+    sentenceRef.current = s;
+    cursorRef.current = 0;
+    totalKeystrokesRef.current = 0;
+    startTimeRef.current = null;
     setSentence(s);
     setCharData(initCharData(s));
     setCursor(0);
@@ -377,6 +381,17 @@ export default function PracticePage(): JSX.Element {
     };
   }, []);
 
+  useEffect(() => {
+    registerNavbarEscapeGuard(() => {
+      const sessionStarted =
+        startTimeRef.current !== null ||
+        totalKeystrokesRef.current > 0 ||
+        cursorRef.current > 0;
+      return !sessionStarted;
+    });
+    return () => registerNavbarEscapeGuard(null);
+  }, [registerNavbarEscapeGuard]);
+
   // ─── Track cursor's line position and scroll the inner content ───────────
   useLayoutEffect(() => {
     const innerEl = innerRef.current;
@@ -419,7 +434,11 @@ export default function PracticePage(): JSX.Element {
     const localMode = mode;
     const tracker = ngramTrackerRef.current;
 
-    if (st === null || finalCursor === 0) {
+    if (st === null) {
+      return;
+    }
+
+    if (finalCursor === 0) {
       resetSession();
       return;
     }
@@ -510,7 +529,7 @@ export default function PracticePage(): JSX.Element {
       {
         id: 'practice.end',
         code: 'Escape',
-        description: 'End session (the global Esc binding also focuses the navbar)',
+        description: 'End active session',
         handler: () => {
           void endSession();
         },

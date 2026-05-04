@@ -49,7 +49,7 @@ export default function HelpOverlay(): JSX.Element | null {
             title="Practice typing"
             rows={[
               ['Type any letter', 'Counts toward the active session'],
-              ['Esc', 'End the session and focus the navbar'],
+              ['Esc', 'End the active session'],
               ['Tab', 'Toggle Flow ↔ Drill'],
               ['\\', 'Toggle on-screen keyboard'],
             ]}
