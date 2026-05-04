@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import { useLocation, useNavigate, matchPath } from 'react-router-dom';
@@ -61,6 +62,8 @@ interface KeymapContextValue {
   enterNavbarLayer: () => void;
   /** Drop focus back to the page body. */
   enterContentLayer: () => void;
+  /** Optional page guard for plain Esc -> navbar focus. Return false to claim Esc. */
+  registerNavbarEscapeGuard: (guard: (() => boolean) | null) => void;
 }
 
 const Ctx = createContext<KeymapContextValue | null>(null);
@@ -104,6 +107,7 @@ export function KeymapProvider({ children }: KeymapProviderProps): JSX.Element {
   const [pageSection, setPageSection] = useState<KeymapSection | null>(null);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [layer, setLayer] = useState<FocusLayer>('content');
+  const navbarEscapeGuardRef = useRef<(() => boolean) | null>(null);
 
   const enterNavbarLayer = useCallback(() => {
     setLayer('navbar');
@@ -117,6 +121,9 @@ export function KeymapProvider({ children }: KeymapProviderProps): JSX.Element {
     }
   }, []);
   const enterContentLayer = useCallback(() => setLayer('content'), []);
+  const registerNavbarEscapeGuard = useCallback((guard: (() => boolean) | null) => {
+    navbarEscapeGuardRef.current = guard;
+  }, []);
 
   // ─── Navbar layer handler ────────────────────────────────────────────
   // While the navbar layer is active, intercept keys at capture phase so
@@ -257,15 +264,11 @@ export function KeymapProvider({ children }: KeymapProviderProps): JSX.Element {
   const subscribedGlobalBindings = useMemo(() => [helpBinding], [helpBinding]);
   useKeymap(subscribedGlobalBindings, layer === 'content' && !isHelpOpen);
 
-  // ─── Esc → enter navbar layer (highest priority) ────────────────────
-  // Capture-phase, document-level: runs BEFORE any page binding so no
-  // page handler can shadow the navbar gesture. We deliberately don't
-  // call `stopImmediatePropagation` — page-level Esc handlers (e.g.
-  // Practice's "end session", Layouts' "cancel delete confirmation")
-  // still fire afterwards in bubble phase, so the user gets both
-  // behaviours from one keystroke. The help overlay registers its own
-  // capture-phase listener AFTER this, so when it's open it preempts
-  // and closes itself instead.
+  // ─── Esc → enter navbar layer ───────────────────────────────────────
+  // Capture-phase, document-level: gives pages a chance to claim Esc
+  // before navbar focus while keeping the idle navbar gesture global.
+  // We deliberately don't call `stopImmediatePropagation` — idle page
+  // handlers can still observe the keypress and no-op.
   useEffect(() => {
     if (layer !== 'content' || isHelpOpen) return;
     const handler = (e: KeyboardEvent) => {
@@ -275,6 +278,8 @@ export function KeymapProvider({ children }: KeymapProviderProps): JSX.Element {
       // entering the navbar layer would silently swallow keystrokes
       // with no visible affordance.
       if (!document.querySelector('[data-navbar-layer-root]')) return;
+      const guard = navbarEscapeGuardRef.current;
+      if (guard && !guard()) return;
       enterNavbarLayer();
     };
     document.addEventListener('keydown', handler, true);
@@ -307,8 +312,17 @@ export function KeymapProvider({ children }: KeymapProviderProps): JSX.Element {
       layer,
       enterNavbarLayer,
       enterContentLayer,
+      registerNavbarEscapeGuard,
     }),
-    [globalBindings, pageSection, isHelpOpen, layer, enterNavbarLayer, enterContentLayer],
+    [
+      globalBindings,
+      pageSection,
+      isHelpOpen,
+      layer,
+      enterNavbarLayer,
+      enterContentLayer,
+      registerNavbarEscapeGuard,
+    ],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

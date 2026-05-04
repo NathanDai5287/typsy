@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup, fireEvent, act } from '@testing-library/react';
 import { MemoryRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import {
   KeymapProvider,
   useKeymapRegistry,
@@ -151,6 +151,70 @@ describe('KeymapProvider', () => {
       fireEvent.keyDown(document, { code: 'Escape' });
     });
     expect(layer).toBe('navbar');
+  });
+
+  it('lets a page claim first Esc before a second Esc lifts focus to the navbar', () => {
+    let layer = 'content';
+    let sessionStarted = true;
+    const onEnd = vi.fn(() => {
+      sessionStarted = false;
+    });
+    const onIdleEsc = vi.fn();
+
+    function PracticeLikePage(): JSX.Element {
+      const { layer: currentLayer, registerNavbarEscapeGuard } = useKeymapRegistry();
+      layer = currentLayer;
+      useEffect(() => {
+        registerNavbarEscapeGuard(() => !sessionStarted);
+        return () => registerNavbarEscapeGuard(null);
+      }, [registerNavbarEscapeGuard]);
+
+      const bindings = useMemo<Keybinding[]>(
+        () => [
+          {
+            id: 'test.practice-end',
+            code: 'Escape',
+            description: 'end active session',
+            handler: () => {
+              if (sessionStarted) {
+                onEnd();
+                return;
+              }
+              onIdleEsc();
+            },
+          },
+        ],
+        [],
+      );
+      useRegisterPageKeymap('Test', bindings);
+      return <div>practice-like-page</div>;
+    }
+
+    render(
+      <QueryClientProvider client={makeQueryClient()}>
+        <MemoryRouter initialEntries={['/']}>
+          <KeymapProvider>
+            <div data-navbar-layer-root>nav</div>
+            <PracticeLikePage />
+          </KeymapProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    expect(layer).toBe('content');
+    act(() => {
+      fireEvent.keyDown(document, { code: 'Escape' });
+    });
+    expect(layer).toBe('content');
+    expect(onEnd).toHaveBeenCalledTimes(1);
+    expect(onIdleEsc).not.toHaveBeenCalled();
+
+    act(() => {
+      fireEvent.keyDown(document, { code: 'Escape' });
+    });
+    expect(layer).toBe('navbar');
+    expect(onEnd).toHaveBeenCalledTimes(1);
+    expect(onIdleEsc).toHaveBeenCalledTimes(1);
   });
 
   it('Esc is a no-op when no navbar is mounted (e.g. /onboarding)', () => {
