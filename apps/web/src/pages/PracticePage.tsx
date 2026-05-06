@@ -725,25 +725,19 @@ export default function PracticePage(): JSX.Element {
           aria-live="polite"
           className="fixed bottom-10 right-4 z-30 panel w-[20rem] max-w-[calc(100vw-2rem)] px-4 py-3 select-none"
         >
-          <div className="flex items-center justify-between gap-4">
-            <div className="text-xs uppercase tracking-[0.2em] text-fg4">
-              {lastSummary.mode === 'drill' ? 'drill ended' : 'session saved'}
+          <div className="flex items-center justify-end gap-4 font-mono">
+            <div className="flex items-baseline gap-1">
+              <span className="text-xl font-bold tabular-nums leading-none text-fg_h">
+                {lastSummary.wpm}
+              </span>
+              <span className="text-xs uppercase text-fg4">wpm</span>
             </div>
 
-            <div className="flex items-baseline gap-4 font-mono">
-              <div className="flex items-baseline gap-1">
-                <span className="text-xl font-bold tabular-nums leading-none text-fg_h">
-                  {lastSummary.wpm}
-                </span>
-                <span className="text-xs uppercase text-fg4">wpm</span>
-              </div>
-
-              <div className="flex items-baseline gap-1">
-                <span className="text-xl font-bold tabular-nums leading-none text-blue-400">
-                  {lastSummary.accuracy}%
-                </span>
-                <span className="text-xs uppercase text-fg4">acc</span>
-              </div>
+            <div className="flex items-baseline gap-1">
+              <span className="text-xl font-bold tabular-nums leading-none text-blue-400">
+                {lastSummary.accuracy}%
+              </span>
+              <span className="text-xs uppercase text-fg4">acc</span>
             </div>
           </div>
 
