@@ -14,6 +14,7 @@ import {
   CHARS_PER_WORD,
   generateDrillSequence,
   generateFlowLine,
+  generateZenLine,
   indexNgramStats,
   computeKeyHealth,
   shouldUnlockNextKey,
@@ -24,7 +25,7 @@ import KeyboardVisual from '../components/KeyboardVisual.tsx';
 import { useKeymapRegistry, useRegisterPageKeymap } from '../lib/keymapContext.tsx';
 import type { Keybinding, Modifier } from '../lib/keymap.ts';
 
-type Mode = 'drill' | 'flow';
+type Mode = 'drill' | 'flow' | 'zen';
 type CharState = 'pending' | 'correct' | 'wrong';
 
 interface CharData {
@@ -114,6 +115,14 @@ function buildSentence(
       length: 100,
     });
   }
+  if (mode === 'zen') {
+    return generateZenLine({
+      allowed: unlocked,
+      userIndex,
+      numWords: 50,
+      recent,
+    });
+  }
   return generateFlowLine({
     allowed: unlocked,
     userIndex,
@@ -195,7 +204,11 @@ export default function PracticePage(): JSX.Element {
 
   // ─── Mode (persisted server-side) ────────────────────────────────────────
   const initialMode: Mode =
-    activeProgress?.current_mode === 'drill' ? 'drill' : 'flow';
+    activeProgress?.current_mode === 'drill'
+      ? 'drill'
+      : activeProgress?.current_mode === 'zen'
+        ? 'zen'
+        : 'flow';
   const [mode, setMode] = useState<Mode>(initialMode);
   useEffect(() => {
     setMode(initialMode);
@@ -331,10 +344,10 @@ export default function PracticePage(): JSX.Element {
     }
     const recent1 = new Set(recentFlowWordsRef.current);
     const s1 = buildSentence(mode, unlockedSet, ngramRows, recent1);
-    if (mode === 'flow') pushRecentFlowWords(s1.split(' '));
+    if (mode !== 'drill') pushRecentFlowWords(s1.split(' '));
     const recent2 = new Set(recentFlowWordsRef.current);
     const s2 = buildSentence(mode, unlockedSet, ngramRows, recent2);
-    if (mode === 'flow') pushRecentFlowWords(s2.split(' '));
+    if (mode !== 'drill') pushRecentFlowWords(s2.split(' '));
     const s = s1 + ' ' + s2;
     sentenceRef.current = s;
     cursorRef.current = 0;
@@ -352,7 +365,7 @@ export default function PracticePage(): JSX.Element {
     setStreamKey((k) => k + 1);
 
     ngramTrackerRef.current?.stop().catch(console.error);
-    if (mode === 'flow') {
+    if (mode !== 'drill') {
       const tracker = new NgramTracker(1, activeProgress.layout_id);
       tracker.start();
       ngramTrackerRef.current = tracker;
@@ -422,7 +435,7 @@ export default function PracticePage(): JSX.Element {
     if (!ngramRows || unlockedSet.size === 0) return;
     const recent = new Set(recentFlowWordsRef.current);
     const next = buildSentence(mode, unlockedSet, ngramRows, recent);
-    if (mode === 'flow') pushRecentFlowWords(next.split(' '));
+    if (mode !== 'drill') pushRecentFlowWords(next.split(' '));
     const more = ' ' + next;
     setSentence((prev) => prev + more);
     setCharData((prev) => [...prev, ...initCharData(more)]);
@@ -472,7 +485,7 @@ export default function PracticePage(): JSX.Element {
       mode: localMode,
     });
 
-    if (localMode !== 'flow' || !activeProgress) return;
+    if (localMode === 'drill' || !activeProgress) return;
 
     try {
       await flushPromise;
@@ -548,8 +561,8 @@ export default function PracticePage(): JSX.Element {
       {
         id: 'practice.toggle-mode',
         code: 'Tab',
-        description: 'Toggle Flow ↔ Drill',
-        handler: () => changeMode(mode === 'flow' ? 'drill' : 'flow'),
+        description: 'Cycle Flow → Zen → Drill',
+        handler: () => changeMode(mode === 'flow' ? 'zen' : mode === 'zen' ? 'drill' : 'flow'),
       },
       {
         id: 'practice.toggle-keyboard',
@@ -707,7 +720,7 @@ export default function PracticePage(): JSX.Element {
         >
           <div className="flex items-baseline justify-between gap-3">
             <div className="text-[10px] uppercase tracking-widest text-fg4">
-              {lastSummary.mode === 'flow' ? 'session saved' : 'drill ended'}
+              {lastSummary.mode === 'drill' ? 'drill ended' : 'session saved'}
             </div>
             <div className="text-right">
               <span className="text-lg font-mono font-bold tabular-nums leading-none text-fg_h">
@@ -808,7 +821,7 @@ export default function PracticePage(): JSX.Element {
 function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
   return (
     <span role="tablist" aria-label="Practice mode" className="inline-flex items-center gap-1">
-      {(['flow', 'drill'] as const).map((m) => (
+      {(['flow', 'zen', 'drill'] as const).map((m) => (
         <button
           key={m}
           role="tab"
