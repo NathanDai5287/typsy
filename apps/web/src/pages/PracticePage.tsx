@@ -210,7 +210,13 @@ export default function PracticePage(): JSX.Element {
         ? 'zen'
         : 'flow';
   const [mode, setMode] = useState<Mode>(initialMode);
+  const modeRef = useRef<Mode>(initialMode);
+  const modeDebouncerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
+    // Skip server-sync while a local mode change is in-flight
+    if (modeDebouncerRef.current !== null) return;
+    if (initialMode === modeRef.current) return;
+    modeRef.current = initialMode;
     setMode(initialMode);
   }, [initialMode]);
 
@@ -220,15 +226,22 @@ export default function PracticePage(): JSX.Element {
   });
 
   const changeMode = useCallback((next: Mode) => {
-    if (next === mode) return;
+    if (next === modeRef.current) return;
+    modeRef.current = next;
     setMode(next);
-    if (activeProgress) {
-      updateProgress.mutate({
-        layout_id: activeProgress.layout_id,
-        current_mode: next,
-      });
+    if (modeDebouncerRef.current !== null) {
+      clearTimeout(modeDebouncerRef.current);
     }
-  }, [mode, activeProgress, updateProgress]);
+    if (activeProgress) {
+      modeDebouncerRef.current = setTimeout(() => {
+        modeDebouncerRef.current = null;
+        updateProgress.mutate({
+          layout_id: activeProgress.layout_id,
+          current_mode: next,
+        });
+      }, 300);
+    }
+  }, [activeProgress, updateProgress]);
 
   // Stable serialized key of unlocked set contents — used as effect dependency
   // so text regenerates whenever the set changes (size OR membership).
@@ -643,7 +656,10 @@ export default function PracticePage(): JSX.Element {
         id: 'practice.toggle-mode',
         code: 'Tab',
         description: 'Cycle Flow → Zen → Drill',
-        handler: () => changeMode(mode === 'flow' ? 'zen' : mode === 'zen' ? 'drill' : 'flow'),
+        handler: () => {
+          const m = modeRef.current;
+          changeMode(m === 'flow' ? 'zen' : m === 'zen' ? 'drill' : 'flow');
+        },
       },
       {
         id: 'practice.toggle-keyboard',
@@ -665,7 +681,7 @@ export default function PracticePage(): JSX.Element {
         handler: () => void handleLockLast(),
       },
     ],
-    [endSession, changeMode, mode, handleUnlockNext, handleLockLast],
+    [endSession, changeMode, handleUnlockNext, handleLockLast],
   );
   useRegisterPageKeymap('Practice', pageBindings);
 
