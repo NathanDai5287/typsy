@@ -797,7 +797,7 @@ export default function PracticePage(): JSX.Element {
         <div
           role="status"
           aria-live="polite"
-          className="fixed bottom-10 right-4 z-30 panel w-[20rem] max-w-[calc(100vw-2rem)] px-4 py-3 select-none text-right"
+          className="fixed bottom-10 right-4 z-30 panel w-auto max-w-[calc(100vw-2rem)] px-4 py-3 select-none text-right"
         >
           <div className="flex w-full items-center justify-end gap-6 font-mono">
             <div className="flex items-baseline gap-1">
