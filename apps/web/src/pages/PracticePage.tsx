@@ -314,6 +314,11 @@ export default function PracticePage(): JSX.Element {
   // generator so the same weak words don't re-surface every chunk.
   const recentFlowWordsRef = useRef<string[]>([]);
 
+  const sentenceCacheRef = useRef<{
+    key: string;
+    byMode: Partial<Record<Mode, { sentence: string; recentFlowWords: string[] }>>;
+  }>({ key: '', byMode: {} });
+
   // Stable ref copies for the document-level keydown handler
   const cursorRef = useRef(cursor);
   const totalKeystrokesRef = useRef(totalKeystrokes);
@@ -330,25 +335,52 @@ export default function PracticePage(): JSX.Element {
   const [streamKey, setStreamKey] = useState(0);
 
   // ─── Reset session ───────────────────────────────────────────────────────
-  const pushRecentFlowWords = useCallback((words: readonly string[]) => {
-    const buf = recentFlowWordsRef.current;
+  const pushRecentWords = useCallback((buf: string[], words: readonly string[]) => {
     for (const w of words) buf.push(w);
     if (buf.length > RECENT_FLOW_BUFFER) {
       buf.splice(0, buf.length - RECENT_FLOW_BUFFER);
     }
   }, []);
 
-  const resetSession = useCallback(() => {
+  const getCacheKey = useCallback((): string => {
+    return `${activeProgress?.layout_id ?? 'none'}|${unlockedKey}|${ngramRows ? 'ready' : 'none'}`;
+  }, [activeProgress?.layout_id, unlockedKey, ngramRows]);
+
+  const buildCachedSentence = useCallback((m: Mode, recentWords: string[]): { sentence: string; recentFlowWords: string[] } => {
     if (!activeProgress || unlockedSet.size === 0 || (ngramRows == null)) {
-      return;
+      return { sentence: '', recentFlowWords: recentWords };
     }
-    const recent1 = new Set(recentFlowWordsRef.current);
-    const s1 = buildSentence(mode, unlockedSet, ngramRows, recent1);
-    if (mode !== 'drill') pushRecentFlowWords(s1.split(' '));
-    const recent2 = new Set(recentFlowWordsRef.current);
-    const s2 = buildSentence(mode, unlockedSet, ngramRows, recent2);
-    if (mode !== 'drill') pushRecentFlowWords(s2.split(' '));
-    const s = s1 + ' ' + s2;
+
+    const buf = [...recentWords];
+    const recent1 = new Set(buf);
+    const s1 = buildSentence(m, unlockedSet, ngramRows, recent1);
+    if (m !== 'drill') pushRecentWords(buf, s1.split(' '));
+
+    const recent2 = new Set(buf);
+    const s2 = buildSentence(m, unlockedSet, ngramRows, recent2);
+    if (m !== 'drill') pushRecentWords(buf, s2.split(' '));
+
+    return { sentence: s1 + ' ' + s2, recentFlowWords: buf };
+  }, [activeProgress, unlockedSet, ngramRows, pushRecentWords]);
+
+  const ensureCachedMode = useCallback((m: Mode): { sentence: string; recentFlowWords: string[] } => {
+    const key = getCacheKey();
+    const cache = sentenceCacheRef.current;
+    if (cache.key !== key) {
+      cache.key = key;
+      cache.byMode = {};
+    }
+
+    const existing = cache.byMode[m];
+    if (existing) return existing;
+
+    const baseRecent = cache.byMode[mode]?.recentFlowWords ?? recentFlowWordsRef.current;
+    const built = buildCachedSentence(m, baseRecent);
+    cache.byMode[m] = built;
+    return built;
+  }, [buildCachedSentence, getCacheKey, mode]);
+
+  const applySessionText = useCallback((m: Mode, s: string, recentFlowWords: string[]) => {
     sentenceRef.current = s;
     cursorRef.current = 0;
     totalKeystrokesRef.current = 0;
@@ -364,15 +396,54 @@ export default function PracticePage(): JSX.Element {
     setScrollY(0);
     setStreamKey((k) => k + 1);
 
+    recentFlowWordsRef.current = [...recentFlowWords];
+
     ngramTrackerRef.current?.stop().catch(console.error);
-    if (mode === 'flow') {
+    if (m === 'flow' && activeProgress) {
       const tracker = new NgramTracker(1, activeProgress.layout_id);
       tracker.start();
       ngramTrackerRef.current = tracker;
     } else {
       ngramTrackerRef.current = null;
     }
-  }, [activeProgress?.layout_id, mode, unlockedSet, ngramRows, pushRecentFlowWords]);
+  }, [activeProgress]);
+
+  const prefetchOtherModes = useCallback((current: Mode) => {
+    const schedule = (fn: () => void) => {
+      if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+        (window.requestIdleCallback as unknown as (cb: () => void) => void)(fn);
+      } else {
+        setTimeout(fn, 0);
+      }
+    };
+
+    schedule(() => {
+      const key = getCacheKey();
+      const cache = sentenceCacheRef.current;
+      if (cache.key !== key) return;
+      const modes: Mode[] = ['flow', 'zen', 'drill'];
+      for (const m of modes) {
+        if (m === current) continue;
+        if (!cache.byMode[m]) {
+          ensureCachedMode(m);
+        }
+      }
+    });
+  }, [ensureCachedMode, getCacheKey]);
+
+  const resetSession = useCallback(() => {
+    if (!activeProgress || unlockedSet.size === 0 || (ngramRows == null)) {
+      return;
+    }
+
+    const cache = sentenceCacheRef.current;
+    cache.key = getCacheKey();
+    cache.byMode = {};
+
+    const built = ensureCachedMode(mode);
+    applySessionText(mode, built.sentence, built.recentFlowWords);
+    prefetchOtherModes(mode);
+  }, [activeProgress, unlockedSet, ngramRows, mode, getCacheKey, ensureCachedMode, applySessionText, prefetchOtherModes]);
 
   useEffect(() => {
     if (!sentence && activeProgress && unlockedSet.size > 0 && ngramRows) {
@@ -386,7 +457,10 @@ export default function PracticePage(): JSX.Element {
   }, [unlockedKey]);
 
   useEffect(() => {
-    if (sentence) resetSession();
+    if (!sentence) return;
+    const built = ensureCachedMode(mode);
+    applySessionText(mode, built.sentence, built.recentFlowWords);
+    prefetchOtherModes(mode);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
@@ -435,11 +509,11 @@ export default function PracticePage(): JSX.Element {
     if (!ngramRows || unlockedSet.size === 0) return;
     const recent = new Set(recentFlowWordsRef.current);
     const next = buildSentence(mode, unlockedSet, ngramRows, recent);
-    if (mode !== 'drill') pushRecentFlowWords(next.split(' '));
+    if (mode !== 'drill') pushRecentWords(recentFlowWordsRef.current, next.split(' '));
     const more = ' ' + next;
     setSentence((prev) => prev + more);
     setCharData((prev) => [...prev, ...initCharData(more)]);
-  }, [mode, unlockedSet, ngramRows, pushRecentFlowWords]);
+  }, [mode, unlockedSet, ngramRows, pushRecentWords]);
 
   // ─── End session (flush + persist + reset) ───────────────────────────────
   const endSession = useCallback(async () => {
