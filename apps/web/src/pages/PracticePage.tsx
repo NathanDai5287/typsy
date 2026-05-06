@@ -703,9 +703,9 @@ export default function PracticePage(): JSX.Element {
         <div
           role="status"
           aria-live="polite"
-          className="fixed bottom-10 right-4 z-30 panel px-4 py-3 select-none w-[18rem]"
+          className="fixed bottom-10 right-4 z-30 panel px-3 py-2 select-none w-[15rem]"
         >
-          <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <div className="text-[10px] uppercase tracking-widest text-fg4">
                 {lastSummary.mode === 'flow' ? 'session saved' : 'drill ended'}
@@ -718,7 +718,7 @@ export default function PracticePage(): JSX.Element {
             </div>
 
             <div className="text-right">
-              <div className="text-xl font-mono font-bold tabular-nums leading-none text-fg_h">
+              <div className="text-lg font-mono font-bold tabular-nums leading-none text-fg_h">
                 {lastSummary.wpm}
                 <span className="ml-1 text-[10px] font-normal text-fg4 align-top">WPM</span>
               </div>
@@ -728,16 +728,16 @@ export default function PracticePage(): JSX.Element {
             </div>
           </div>
 
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <div className="rounded border border-bg4/60 bg-bg2/40 px-2 py-1.5">
+          <div className="mt-2 grid grid-cols-2 gap-1.5">
+            <div className="rounded border border-bg4/60 bg-bg2/30 px-2 py-1">
               <div className="text-[10px] uppercase tracking-widest text-fg4">Chars</div>
-              <div className="mt-0.5 text-sm font-mono font-bold tabular-nums text-fg_h">
+              <div className="mt-0.5 text-[13px] font-mono font-bold tabular-nums text-fg_h leading-none">
                 {lastSummary.chars}
               </div>
             </div>
-            <div className="rounded border border-bg4/60 bg-bg2/40 px-2 py-1.5">
+            <div className="rounded border border-bg4/60 bg-bg2/30 px-2 py-1">
               <div className="text-[10px] uppercase tracking-widest text-fg4">Words</div>
-              <div className="mt-0.5 text-sm font-mono font-bold tabular-nums text-fg_h">
+              <div className="mt-0.5 text-[13px] font-mono font-bold tabular-nums text-fg_h leading-none">
                 {lastSummary.words}
               </div>
             </div>
