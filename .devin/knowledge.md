@@ -120,6 +120,10 @@ rm apps/server/data/typsy.db*
 
 There is no separate `lint` or `typecheck` command — `pnpm build` is the typecheck. There is no Prettier/ESLint config in this repo as of now.
 
+### Backend repull / restart guidance (for agents)
+- If an agent changes anything under `apps/server/`, `packages/shared/`, or `apps/server/src/db/migrations/` (or updates workspace deps / `pnpm-lock.yaml`), the already-running backend will not pick it up until it is restarted.
+- If the human is running the backend from a *different* checkout/worktree than the one the agent edited, the human must pull/update that checkout before restarting, otherwise they will keep running old code.
+
 ---
 
 ## Conventions
