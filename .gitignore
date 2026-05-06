@@ -16,6 +16,7 @@ data/
 .DS_Store
 .vscode/
 .idea/
+.claude/
 
 # Devin session-local config (per-machine tool permissions)
 .devin/config.local.json
