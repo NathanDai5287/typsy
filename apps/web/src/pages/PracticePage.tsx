@@ -716,44 +716,40 @@ export default function PracticePage(): JSX.Element {
         <div
           role="status"
           aria-live="polite"
-          className="fixed bottom-10 right-4 z-30 panel px-4 py-3 select-none w-[18rem]"
+          className="fixed bottom-10 right-4 z-30 panel px-3 py-2 select-none"
         >
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-[10px] uppercase tracking-widest text-fg4">
-                {lastSummary.mode === 'drill' ? 'drill ended' : 'session saved'}
-              </div>
-              {lastSummary.unlocked && (
-                <div className="mt-1 text-[11px] text-green-400">
-                  unlocked <span className="font-bold">{lastSummary.unlocked}</span>
-                </div>
-              )}
+          <div className="flex items-baseline justify-between gap-3">
+            <div className="text-[10px] uppercase tracking-widest text-fg4">
+              {lastSummary.mode === 'drill' ? 'drill ended' : 'session saved'}
             </div>
-
             <div className="text-right">
-              <div className="text-xl font-mono font-bold tabular-nums leading-none text-fg_h">
+              <span className="text-lg font-mono font-bold tabular-nums leading-none text-fg_h">
                 {lastSummary.wpm}
-                <span className="ml-1 text-[10px] font-normal text-fg4 align-top">WPM</span>
-              </div>
-              <div className="mt-1 text-[11px] text-blue-400 tabular-nums font-mono">
-                {lastSummary.accuracy}% acc
-              </div>
+              </span>
+              <span className="ml-1 text-[10px] text-fg4 align-top">wpm</span>
+              <span className="ml-2 text-[11px] text-blue-400 tabular-nums font-mono">
+                {lastSummary.accuracy}%
+              </span>
+              <span className="ml-1 text-[10px] text-fg4 align-top">acc</span>
             </div>
           </div>
 
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <div className="rounded border border-bg4/60 bg-bg2/40 px-2 py-1.5">
-              <div className="text-[10px] uppercase tracking-widest text-fg4">Chars</div>
-              <div className="mt-0.5 text-sm font-mono font-bold tabular-nums text-fg_h">
-                {lastSummary.chars}
-              </div>
-            </div>
-            <div className="rounded border border-bg4/60 bg-bg2/40 px-2 py-1.5">
-              <div className="text-[10px] uppercase tracking-widest text-fg4">Words</div>
-              <div className="mt-0.5 text-sm font-mono font-bold tabular-nums text-fg_h">
-                {lastSummary.words}
-              </div>
-            </div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono text-fg3">
+            <span className="tabular-nums">
+              <span className="text-fg4">chars</span> {lastSummary.chars}
+            </span>
+            <span className="text-fg4">·</span>
+            <span className="tabular-nums">
+              <span className="text-fg4">words</span> {lastSummary.words}
+            </span>
+            {lastSummary.unlocked && (
+              <>
+                <span className="text-fg4">·</span>
+                <span className="text-green-400">
+                  unlocked <span className="font-bold">{lastSummary.unlocked}</span>
+                </span>
+              </>
+            )}
           </div>
         </div>
       )}
