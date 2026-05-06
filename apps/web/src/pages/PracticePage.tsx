@@ -723,25 +723,31 @@ export default function PracticePage(): JSX.Element {
         <div
           role="status"
           aria-live="polite"
-          className="fixed bottom-10 right-4 z-30 panel px-3 py-2 select-none"
+          className="fixed bottom-10 right-4 z-30 panel w-[20rem] max-w-[calc(100vw-2rem)] px-4 py-3 select-none"
         >
-          <div className="flex items-baseline justify-between gap-3">
-            <div className="text-[10px] uppercase tracking-widest text-fg4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="text-xs uppercase tracking-[0.2em] text-fg4">
               {lastSummary.mode === 'drill' ? 'drill ended' : 'session saved'}
             </div>
-            <div className="text-right">
-              <span className="text-lg font-mono font-bold tabular-nums leading-none text-fg_h">
-                {lastSummary.wpm}
-              </span>
-              <span className="ml-1 text-[10px] text-fg4 align-top">wpm</span>
-              <span className="ml-2 text-[11px] text-blue-400 tabular-nums font-mono">
-                {lastSummary.accuracy}%
-              </span>
-              <span className="ml-1 text-[10px] text-fg4 align-top">acc</span>
+
+            <div className="flex items-baseline gap-4 font-mono">
+              <div className="flex items-baseline gap-1">
+                <span className="text-xl font-bold tabular-nums leading-none text-fg_h">
+                  {lastSummary.wpm}
+                </span>
+                <span className="text-xs uppercase text-fg4">wpm</span>
+              </div>
+
+              <div className="flex items-baseline gap-1">
+                <span className="text-xl font-bold tabular-nums leading-none text-blue-400">
+                  {lastSummary.accuracy}%
+                </span>
+                <span className="text-xs uppercase text-fg4">acc</span>
+              </div>
             </div>
           </div>
 
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono text-fg3">
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-mono text-fg3">
             <span className="tabular-nums">
               <span className="text-fg4">chars</span> {lastSummary.chars}
             </span>
@@ -753,7 +759,7 @@ export default function PracticePage(): JSX.Element {
               <>
                 <span className="text-fg4">·</span>
                 <span className="text-green-400">
-                  unlocked <span className="font-bold">{lastSummary.unlocked}</span>
+                  unlocked <span className="font-bold tabular-nums">{lastSummary.unlocked}</span>
                 </span>
               </>
             )}
