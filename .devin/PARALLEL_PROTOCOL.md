@@ -11,6 +11,11 @@ You are one of several Devin instances working on this repo simultaneously, each
 5. If clear, claim your scope BEFORE editing anything: `scripts/devin-locks.sh claim <slug> "<one-line description>" "<comma-separated paths/globs you expect to touch>"`. The lock script will refuse the claim if another slug is already claimed from this same working directory — that's a hard signal you skipped step 2. Do NOT bypass it.
 6. Confirm you are on a `devin/<slug>` branch. If not, stop and ask.
 
+**CRITICAL: Command ownership rule**
+- **ALL commands must be run by the AI agent.** Never ask the user to run shell commands (spawn worktrees, lock claims, installs, builds, tests, dev servers, git operations, etc.).
+- If a command needs to be run, the agent runs it using the `exec` tool.
+- Only ask the human for: (a) product decisions, (b) credentials/secrets, or (c) explicit permission gates like "Do you want me to commit/push/open a PR?"
+
 ## During the task
 - Stay inside your claimed scope. If you discover you need to edit a file outside your claim, run `scripts/devin-locks.sh list` again — if no one else has it, run `claim` again to extend your scope; if someone does, STOP and report.
 - You are one of several Devin instances working on this repo in parallel. Other instances are running RIGHT NOW in sibling git worktrees under `../worktrees/`. Assume their work exists even if you can't see it.
