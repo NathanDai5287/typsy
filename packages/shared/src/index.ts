@@ -11,6 +11,7 @@ export * from './keyUnlock.js';
 export * from './markov.js';
 export * from './drill.js';
 export * from './flow.js';
+export * from './zen.js';
 export * from './analysis.js';
 export * from './difficulty.js';
 export * from './cost.js';
