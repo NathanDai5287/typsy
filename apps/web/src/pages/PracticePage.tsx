@@ -289,6 +289,8 @@ export default function PracticePage(): JSX.Element {
   const [lastSummary, setLastSummary] = useState<{
     wpm: number;
     accuracy: number;
+    chars: number;
+    words: number;
     mode: Mode;
     unlocked?: string;
   } | null>(null);
@@ -456,9 +458,17 @@ export default function PracticePage(): JSX.Element {
     ngramTrackerRef.current = null;
 
     resetSession();
+
+    const typedText = sentenceRef.current.slice(0, finalCursor);
+    const wordsTyped = typedText.trim().length === 0
+      ? 0
+      : typedText.trim().split(/\s+/).filter(Boolean).length;
+
     setLastSummary({
       wpm: Math.round(wpm),
       accuracy: Math.round(accuracy * 100),
+      chars: finalCursor,
+      words: wordsTyped,
       mode: localMode,
     });
 
@@ -693,23 +703,45 @@ export default function PracticePage(): JSX.Element {
         <div
           role="status"
           aria-live="polite"
-          className="fixed bottom-10 right-4 z-30 panel px-3 py-2 text-xs font-mono flex items-center gap-2 select-none"
+          className="fixed bottom-10 right-4 z-30 panel px-4 py-3 select-none w-[18rem]"
         >
-          <span className="text-fg4">
-            {lastSummary.mode === 'flow' ? 'session saved' : 'drill ended'}
-          </span>
-          <span className="text-fg4">·</span>
-          <span className="text-yellow-400 tabular-nums">{lastSummary.wpm} WPM</span>
-          <span className="text-fg4">·</span>
-          <span className="text-blue-400 tabular-nums">{lastSummary.accuracy}% acc</span>
-          {lastSummary.unlocked && (
-            <>
-              <span className="text-fg4">·</span>
-              <span className="text-green-400">
-                unlocked <span className="font-bold">{lastSummary.unlocked}</span>
-              </span>
-            </>
-          )}
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[10px] uppercase tracking-widest text-fg4">
+                {lastSummary.mode === 'flow' ? 'session saved' : 'drill ended'}
+              </div>
+              {lastSummary.unlocked && (
+                <div className="mt-1 text-[11px] text-green-400">
+                  unlocked <span className="font-bold">{lastSummary.unlocked}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="text-right">
+              <div className="text-xl font-mono font-bold tabular-nums leading-none text-fg_h">
+                {lastSummary.wpm}
+                <span className="ml-1 text-[10px] font-normal text-fg4 align-top">WPM</span>
+              </div>
+              <div className="mt-1 text-[11px] text-blue-400 tabular-nums font-mono">
+                {lastSummary.accuracy}% acc
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="rounded border border-bg4/60 bg-bg2/40 px-2 py-1.5">
+              <div className="text-[10px] uppercase tracking-widest text-fg4">Chars</div>
+              <div className="mt-0.5 text-sm font-mono font-bold tabular-nums text-fg_h">
+                {lastSummary.chars}
+              </div>
+            </div>
+            <div className="rounded border border-bg4/60 bg-bg2/40 px-2 py-1.5">
+              <div className="text-[10px] uppercase tracking-widest text-fg4">Words</div>
+              <div className="mt-0.5 text-sm font-mono font-bold tabular-nums text-fg_h">
+                {lastSummary.words}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
