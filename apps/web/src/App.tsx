@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import { fetchUser } from './lib/api.ts';
 import { useAuth } from './lib/auth.tsx';
 import Nav from './components/Nav.tsx';
@@ -75,8 +76,14 @@ export default function App(): JSX.Element {
  * focus" affordance sits on top.
  */
 function Shell({ needsOnboarding }: { needsOnboarding: boolean }): JSX.Element {
-  const { layer } = useKeymapRegistry();
+  const { layer, prefetchTabData } = useKeymapRegistry();
   const navbarActive = !needsOnboarding && layer === 'navbar';
+
+  // Prefetch tab data on app bootstrap (not just on navbar focus)
+  useEffect(() => {
+    if (needsOnboarding) return;
+    void prefetchTabData();
+  }, [needsOnboarding, prefetchTabData]);
 
   return (
     <div className="min-h-screen flex flex-col bg-bg_h text-fg1 font-mono">
