@@ -324,12 +324,10 @@ export default function PracticePage(): JSX.Element {
   const totalKeystrokesRef = useRef(totalKeystrokes);
   const startTimeRef = useRef(startTime);
   const sentenceRef = useRef(sentence);
-  const modeRef = useRef(mode);
   cursorRef.current = cursor;
   totalKeystrokesRef.current = totalKeystrokes;
   startTimeRef.current = startTime;
   sentenceRef.current = sentence;
-  modeRef.current = mode;
 
   // ─── Monkeytype-style scrolling window ───────────────────────────────────
   const innerRef = useRef<HTMLDivElement>(null);
@@ -645,10 +643,7 @@ export default function PracticePage(): JSX.Element {
         id: 'practice.toggle-mode',
         code: 'Tab',
         description: 'Cycle Flow → Zen → Drill',
-        handler: () => {
-          const currentMode = modeRef.current;
-          changeMode(currentMode === 'flow' ? 'zen' : currentMode === 'zen' ? 'drill' : 'flow');
-        },
+        handler: () => changeMode(mode === 'flow' ? 'zen' : mode === 'zen' ? 'drill' : 'flow'),
       },
       {
         id: 'practice.toggle-keyboard',
@@ -670,7 +665,7 @@ export default function PracticePage(): JSX.Element {
         handler: () => void handleLockLast(),
       },
     ],
-    [endSession, changeMode, handleUnlockNext, handleLockLast],
+    [endSession, changeMode, mode, handleUnlockNext, handleLockLast],
   );
   useRegisterPageKeymap('Practice', pageBindings);
 
