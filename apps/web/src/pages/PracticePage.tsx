@@ -210,10 +210,8 @@ export default function PracticePage(): JSX.Element {
         ? 'zen'
         : 'flow';
   const [mode, setMode] = useState<Mode>(initialMode);
-  const modeRef = useRef<Mode>(initialMode);
   useEffect(() => {
     setMode(initialMode);
-    modeRef.current = initialMode;
   }, [initialMode]);
 
   const updateProgress = useMutation({
@@ -222,8 +220,7 @@ export default function PracticePage(): JSX.Element {
   });
 
   const changeMode = useCallback((next: Mode) => {
-    if (next === modeRef.current) return;
-    modeRef.current = next;
+    if (next === mode) return;
     setMode(next);
     if (activeProgress) {
       updateProgress.mutate({
@@ -231,7 +228,7 @@ export default function PracticePage(): JSX.Element {
         current_mode: next,
       });
     }
-  }, [activeProgress, updateProgress]);
+  }, [mode, activeProgress, updateProgress]);
 
   // Stable serialized key of unlocked set contents — used as effect dependency
   // so text regenerates whenever the set changes (size OR membership).
@@ -646,10 +643,7 @@ export default function PracticePage(): JSX.Element {
         id: 'practice.toggle-mode',
         code: 'Tab',
         description: 'Cycle Flow → Zen → Drill',
-        handler: () => {
-          const m = modeRef.current;
-          changeMode(m === 'flow' ? 'zen' : m === 'zen' ? 'drill' : 'flow');
-        },
+        handler: () => changeMode(mode === 'flow' ? 'zen' : mode === 'zen' ? 'drill' : 'flow'),
       },
       {
         id: 'practice.toggle-keyboard',
@@ -671,7 +665,7 @@ export default function PracticePage(): JSX.Element {
         handler: () => void handleLockLast(),
       },
     ],
-    [endSession, changeMode, handleUnlockNext, handleLockLast],
+    [endSession, changeMode, mode, handleUnlockNext, handleLockLast],
   );
   useRegisterPageKeymap('Practice', pageBindings);
 
