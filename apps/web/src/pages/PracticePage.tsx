@@ -365,7 +365,7 @@ export default function PracticePage(): JSX.Element {
     setStreamKey((k) => k + 1);
 
     ngramTrackerRef.current?.stop().catch(console.error);
-    if (mode !== 'drill') {
+    if (mode === 'flow') {
       const tracker = new NgramTracker(1, activeProgress.layout_id);
       tracker.start();
       ngramTrackerRef.current = tracker;
@@ -466,8 +466,8 @@ export default function PracticePage(): JSX.Element {
     const accuracy = finalKeystrokes > 0 ? finalCursor / finalKeystrokes : 1;
     const errors = finalKeystrokes - finalCursor;
 
-    tracker?.finalizeWord();
-    const flushPromise = tracker?.stop() ?? Promise.resolve();
+    if (localMode === 'flow') tracker?.finalizeWord();
+    const flushPromise = localMode === 'flow' ? (tracker?.stop() ?? Promise.resolve()) : Promise.resolve();
     ngramTrackerRef.current = null;
 
     resetSession();
@@ -502,6 +502,13 @@ export default function PracticePage(): JSX.Element {
         errors,
         cumulative_chars_at_session_end: 0,
       });
+
+      if (localMode !== 'flow') {
+        void queryClient.invalidateQueries({
+          queryKey: ['sessions', activeProgress.layout_id],
+        });
+        return;
+      }
 
       if (!isMainLayout) {
         const fresh = await queryClient.fetchQuery<NgramStat[]>({
