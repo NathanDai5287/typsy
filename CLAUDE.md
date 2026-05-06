@@ -3,6 +3,6 @@
 ## Agent protocol
 
 1. **Always work in a git worktree.** Run `bash scripts/devin-spawn.sh <slug>` yourself to create one, then do all work from that path. Never edit files in the main checkout.
-2. **Run all commands yourself.** Do not ask the user to run shell commands — use the Bash tool to run them directly.
+2. **Always run the commands yourself.** Do not ask the user to run shell commands (spawn worktrees, locks, installs, dev servers, builds, tests, etc.). If a command is needed, you run it.
 3. Follow the startup sequence in `.devin/PARALLEL_PROTOCOL.md` (check locks, claim scope, confirm branch) before touching any files.
 4. **PRs auto-merge.** Once CI is green, GitHub merges the PR and deletes the branch automatically. Do not run `gh pr merge` yourself.
