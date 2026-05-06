@@ -697,9 +697,9 @@ export default function PracticePage(): JSX.Element {
       <div className="w-full max-w-3xl flex justify-between items-center mb-4 text-xs font-mono">
         <div className="flex items-center gap-2 text-fg3">
           <span className="text-fg_h">{activeLayout.name}</span>
-          <span className="text-fg4">·</span>
+          <span className="text-fg4 opacity-60">·</span>
           <ModeToggle mode={mode} onChange={changeMode} />
-          <span className="text-fg4">·</span>
+          <span className="text-fg4 opacity-60">·</span>
           {isMainLayout ? (
             <span className="text-fg3">daily driver</span>
           ) : (
@@ -723,9 +723,9 @@ export default function PracticePage(): JSX.Element {
         <div
           role="status"
           aria-live="polite"
-          className="fixed bottom-10 right-4 z-30 panel w-[20rem] max-w-[calc(100vw-2rem)] px-4 py-3 select-none"
+          className="fixed bottom-10 right-4 z-30 panel w-[20rem] max-w-[calc(100vw-2rem)] px-4 py-3 select-none text-right"
         >
-          <div className="flex items-center justify-end gap-4 font-mono">
+          <div className="flex w-full items-center justify-end gap-6 font-mono">
             <div className="flex items-baseline gap-1">
               <span className="text-xl font-bold tabular-nums leading-none text-fg_h">
                 {lastSummary.wpm}
@@ -741,17 +741,17 @@ export default function PracticePage(): JSX.Element {
             </div>
           </div>
 
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-mono text-fg3">
+          <div className="mt-2 flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs font-mono text-fg3">
             <span className="tabular-nums">
               <span className="text-fg4">chars</span> {lastSummary.chars}
             </span>
-            <span className="text-fg4">·</span>
+            <span className="text-fg4 opacity-60">·</span>
             <span className="tabular-nums">
               <span className="text-fg4">words</span> {lastSummary.words}
             </span>
             {lastSummary.unlocked && (
               <>
-                <span className="text-fg4">·</span>
+                <span className="text-fg4 opacity-60">·</span>
                 <span className="text-green-400">
                   unlocked <span className="font-bold tabular-nums">{lastSummary.unlocked}</span>
                 </span>
