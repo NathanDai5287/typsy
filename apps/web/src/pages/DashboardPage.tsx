@@ -245,7 +245,7 @@ export default function DashboardPage(): JSX.Element {
                       k === 'wpm' ? [v.toFixed(1), 'WPM'] : [v, k]
                     }
                   />
-                  <Line type="linear" dataKey="wpm" stroke={CHART.wpmLine} strokeWidth={1.5} dot={false} />
+                  <Line type="linear" dataKey="wpm" stroke={CHART.wpmLine} strokeWidth={1.5} dot={false} isAnimationActive={false} />
                 </LineChart>
               </ResponsiveContainer>
             </section>
@@ -268,7 +268,7 @@ export default function DashboardPage(): JSX.Element {
                     labelFormatter={(t) => `${Number(t).toLocaleString()} chars`}
                     formatter={(v: number) => [v.toFixed(1), 'WPM']}
                   />
-                  <Line type="linear" dataKey="wpm" stroke={CHART.volumeLine} strokeWidth={1.5} dot={false} />
+                  <Line type="linear" dataKey="wpm" stroke={CHART.volumeLine} strokeWidth={1.5} dot={false} isAnimationActive={false} />
                 </LineChart>
               </ResponsiveContainer>
             </section>
@@ -303,6 +303,7 @@ export default function DashboardPage(): JSX.Element {
                   stroke={CHART.accLine}
                   strokeWidth={1.5}
                   dot={false}
+                  isAnimationActive={false}
                 />
               </LineChart>
             </ResponsiveContainer>
@@ -351,7 +352,7 @@ export default function DashboardPage(): JSX.Element {
                 );
               }}
             />
-            <Bar dataKey="wpm">
+            <Bar dataKey="wpm" isAnimationActive={false}>
               {fingerAgg.map((f) => (
                 <Cell key={f.finger} fill={FINGER_HEX[f.finger]} />
               ))}

@@ -64,6 +64,8 @@ interface KeymapContextValue {
   enterContentLayer: () => void;
   /** Optional page guard for plain Esc -> navbar focus. Return false to claim Esc. */
   registerNavbarEscapeGuard: (guard: (() => boolean) | null) => void;
+  /** Prefetch data for all tabs (called from app shell on bootstrap). */
+  prefetchTabData: () => Promise<void>;
 }
 
 const Ctx = createContext<KeymapContextValue | null>(null);
@@ -187,45 +189,46 @@ export function KeymapProvider({ children }: KeymapProviderProps): JSX.Element {
   }, [layer]);
 
   // ─── Tab prefetch ───────────────────────────────────────────────────
-  // When the user enters the navbar layer, warm the cache for every tab
-  // they might arrow-walk to. With a 30s default staleTime and the
-  // active-layout-scoped keys already populated by whichever page is
-  // mounted, a single prefetch round on layer entry is enough to keep
-  // arrow-key tab switching from re-fetching.
+  // Warm the cache for every tab the user might navigate to. This is called
+  // from the app shell on bootstrap (so data is ready before navbar focus) and
+  // also when entering the navbar layer (as a refresh fallback).
+  const prefetchTabData = useCallback(async () => {
+    try {
+      const user = await queryClient.ensureQueryData({
+        queryKey: ['user'],
+        queryFn: fetchUser,
+      });
+      const layoutId = user?.layout_progress[0]?.layout_id;
+      const tasks: Promise<unknown>[] = [
+        queryClient.prefetchQuery({
+          queryKey: ['layouts', 'summary'],
+          queryFn: fetchLayoutSummary,
+        }),
+      ];
+      if (layoutId) {
+        tasks.push(
+          queryClient.prefetchQuery({
+            queryKey: ['sessions', layoutId],
+            queryFn: () => fetchSessions(layoutId),
+          }),
+          queryClient.prefetchQuery({
+            queryKey: ['ngramStats', layoutId],
+            queryFn: () => fetchNgramStats(layoutId),
+          }),
+        );
+      }
+      await Promise.allSettled(tasks);
+    } catch {
+      // Prefetch is best-effort — a failure here just means the
+      // tabs will fetch on visit like they would have anyway.
+    }
+  }, [queryClient]);
+
+  // Call prefetch when entering navbar layer (refresh fallback)
   useEffect(() => {
     if (layer !== 'navbar') return;
-    void (async () => {
-      try {
-        const user = await queryClient.ensureQueryData({
-          queryKey: ['user'],
-          queryFn: fetchUser,
-        });
-        const layoutId = user?.layout_progress[0]?.layout_id;
-        const tasks: Promise<unknown>[] = [
-          queryClient.prefetchQuery({
-            queryKey: ['layouts', 'summary'],
-            queryFn: fetchLayoutSummary,
-          }),
-        ];
-        if (layoutId) {
-          tasks.push(
-            queryClient.prefetchQuery({
-              queryKey: ['sessions', layoutId],
-              queryFn: () => fetchSessions(layoutId),
-            }),
-            queryClient.prefetchQuery({
-              queryKey: ['ngramStats', layoutId],
-              queryFn: () => fetchNgramStats(layoutId),
-            }),
-          );
-        }
-        await Promise.allSettled(tasks);
-      } catch {
-        // Prefetch is best-effort — a failure here just means the
-        // tabs will fetch on visit like they would have anyway.
-      }
-    })();
-  }, [layer, queryClient]);
+    void prefetchTabData();
+  }, [layer, prefetchTabData]);
 
   // ─── Global bindings ────────────────────────────────────────────────
   const toggleHelp = useCallback(() => setIsHelpOpen((v) => !v), []);
@@ -313,6 +316,7 @@ export function KeymapProvider({ children }: KeymapProviderProps): JSX.Element {
       enterNavbarLayer,
       enterContentLayer,
       registerNavbarEscapeGuard,
+      prefetchTabData,
     }),
     [
       globalBindings,
@@ -322,6 +326,7 @@ export function KeymapProvider({ children }: KeymapProviderProps): JSX.Element {
       enterNavbarLayer,
       enterContentLayer,
       registerNavbarEscapeGuard,
+      prefetchTabData,
     ],
   );
 
