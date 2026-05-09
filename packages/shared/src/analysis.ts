@@ -166,19 +166,28 @@ export interface WeakNgram {
 
 /**
  * Top-K weakest ngrams of a given type, ranked by smoothed error rate.
- * Skips ngrams below `minAttempts` to avoid noise.
+ *
+ * Requires at least `minMisses` actual misses by default. Without that
+ * filter, the Beta(1,9) prior in `smoothedErrorRate` produces a non-zero
+ * error rate even for ngrams the user has never mistyped — so a clean
+ * session would surface "weak" bigrams that the user has only seen a few
+ * times and never failed. That's not weakness, just sparsity.
+ *
+ * Skips ngrams below `minAttempts` to avoid noise from one-off mistypes.
  */
 export function topWeakNgrams(
   ngramRows: readonly NgramStat[],
   type: NgramStat['ngram_type'],
   topK = 10,
   minAttempts = 5,
+  minMisses = 1,
 ): WeakNgram[] {
   const expectedLength = getExpectedNgramLength(type);
   const out: WeakNgram[] = [];
   for (const row of ngramRows) {
     if (row.ngram_type !== type) continue;
     if (row.hits + row.misses < minAttempts) continue;
+    if (row.misses < minMisses) continue;
     if (expectedLength !== null && row.ngram.length !== expectedLength) continue;
     out.push({
       ngram: row.ngram,
@@ -370,5 +379,36 @@ export function findWordsWithBigram(
     });
   }
   out.sort((a, b) => b.misses - a.misses);
+  return out.slice(0, limit);
+}
+
+/**
+ * Find words that contain a given bigram, ranked by mean keypress time
+ * (slowest first). Uses word1 stats. Skips words with no hits or fewer than
+ * `minAttempts` total attempts to avoid noise from a single mistype.
+ */
+export function findSlowWordsWithBigram(
+  ngramRows: readonly NgramStat[],
+  bigram: string,
+  limit = 5,
+  minAttempts = 3,
+): Array<{ word: string; hits: number; misses: number; meanMs: number; wpm: number }> {
+  const out: Array<{ word: string; hits: number; misses: number; meanMs: number; wpm: number }> = [];
+  for (const row of ngramRows) {
+    if (row.ngram_type !== 'word1') continue;
+    if (row.hits + row.misses < minAttempts) continue;
+    if (row.hits <= 0) continue;
+    if (!row.ngram.includes(bigram)) continue;
+    const meanMs = row.total_time_ms / row.hits;
+    if (meanMs <= 0) continue;
+    out.push({
+      word: row.ngram,
+      hits: row.hits,
+      misses: row.misses,
+      meanMs,
+      wpm: 60_000 / (meanMs * CHARS_PER_WORD),
+    });
+  }
+  out.sort((a, b) => b.meanMs - a.meanMs);
   return out.slice(0, limit);
 }
