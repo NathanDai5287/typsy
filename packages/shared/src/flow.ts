@@ -64,7 +64,7 @@ export interface FlowOptions {
    * Trigram-error coefficient. Each trigram contributes `beta × err_rate`
    * to the score. Trigrams capture roll/scissor patterns that pure-bigram
    * scoring misses. Trigram TIMING data is intentionally not used —
-   * `char3.total_time_ms` only stores the gap between letters 2 and 3
+   * `char3.hit_time_ms` only stores the gap between letters 2 and 3
    * (= the trailing `char2` time), so it adds no information beyond
    * bigram timing. Default 0.5.
    */
@@ -108,7 +108,7 @@ interface SlowParams {
 }
 
 /**
- * Mean keypress time (`total_time_ms / hits`) for a specific ngram, or
+ * Mean keypress time (`hit_time_ms / hits`) for a specific ngram, or
  * `null` if there isn't enough data to use directly. We divide by hits
  * (not attempts) to match the convention in `analysis.ts` /
  * `topSlowNgrams` so the dashboard's "slow ngrams" panel and flow's
@@ -123,8 +123,8 @@ function meanTimeOrNull(
   const row = userIndex.get(`${type}:${ngram}`);
   if (!row) return null;
   if (row.hits + row.misses < minSamples) return null;
-  if (row.hits <= 0 || row.total_time_ms <= 0) return null;
-  return row.total_time_ms / row.hits;
+  if (row.hits <= 0 || row.hit_time_ms <= 0) return null;
+  return row.hit_time_ms / row.hits;
 }
 
 /**
@@ -188,8 +188,8 @@ function computeUserBaselineMs(
   for (const [key, row] of userIndex) {
     if (!key.startsWith('char2:')) continue;
     if (row.hits + row.misses < minSamples) continue;
-    if (row.hits <= 0 || row.total_time_ms <= 0) continue;
-    times.push(row.total_time_ms / row.hits);
+    if (row.hits <= 0 || row.hit_time_ms <= 0) continue;
+    times.push(row.hit_time_ms / row.hits);
   }
   if (times.length === 0) return defaultMs;
   times.sort((a, b) => a - b);
@@ -213,9 +213,10 @@ function computeUserBaselineMs(
  * Trigrams contribute their error rate but NOT their timing: the
  * tracker only records the trailing-bigram interval into `char3`, so
  * trigram-level timing carries no information that bigram-level timing
- * doesn't. Per-word `total_time_ms` is similarly only the time of the
- * space keystroke, so per-word slowness is *derived* from bigram times
- * rather than read directly from the `word1` row.
+ * doesn't. Per-word `hit_time_ms` is intentionally always 0 — the
+ * trailing-space keystroke isn't a meaningful word time — so per-word
+ * slowness is *derived* from bigram times rather than read from the
+ * `word1` row.
  *
  * We deliberately do NOT multiply by English-corpus bigram frequency.
  * The most common English bigrams (`th`, `he`, `in`, `er`, `an`, `re`,

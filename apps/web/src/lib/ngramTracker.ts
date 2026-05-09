@@ -2,7 +2,7 @@ import { WRITE_FLUSH_INTERVAL_MS } from '@typsy/shared';
 import type { BigramWordMissDelta, NgramBatchDelta } from '@typsy/shared';
 import { postNgramBatch } from './api.ts';
 
-type DeltaEntry = { hits: number; misses: number; totalTimeMs: number };
+type DeltaEntry = { hits: number; misses: number; hitTimeMs: number };
 
 /**
  * Tracks per-keystroke ngram stats and per-bigram missed-word context.
@@ -104,13 +104,11 @@ export class NgramTracker {
       if (hit) {
         if (this.currentWord) {
           const wordHit = !this.currentWordHadError;
-          this.addDelta(`word1:${this.currentWord}`, wordHit, timeSinceLastMs);
+          // Word-level deltas carry hits/misses only; no timing. Word
+          // slowness is reconstructed from char-level data.
+          this.addDelta(`word1:${this.currentWord}`, wordHit, 0);
           if (this.prevWord) {
-            this.addDelta(
-              `word2:${this.prevWord} ${this.currentWord}`,
-              wordHit,
-              timeSinceLastMs,
-            );
+            this.addDelta(`word2:${this.prevWord} ${this.currentWord}`, wordHit, 0);
           }
           this.prevWord = this.currentWord;
           this.currentWord = '';
@@ -184,7 +182,7 @@ export class NgramTracker {
         ngram_type,
         hits_delta: entry.hits,
         misses_delta: entry.misses,
-        time_delta_ms: entry.totalTimeMs,
+        hit_time_delta_ms: entry.hitTimeMs,
       });
     }
 
@@ -220,12 +218,19 @@ export class NgramTracker {
     return new Map(this.bigramWordMisses);
   }
 
+  /**
+   * Accumulate one attempt for `key`. `timeMs` is added to `hitTimeMs` only
+   * when `hit === true`; miss times are discarded so the per-key WPM math
+   * isn't skewed by hesitation before errors. Pass `timeMs = 0` for
+   * word-level deltas — word slowness is reconstructed from char-level
+   * data via `findSlowWordsWithBigram`.
+   */
   private addDelta(key: string, hit: boolean, timeMs: number): void {
-    const existing = this.deltas.get(key) ?? { hits: 0, misses: 0, totalTimeMs: 0 };
+    const existing = this.deltas.get(key) ?? { hits: 0, misses: 0, hitTimeMs: 0 };
     this.deltas.set(key, {
       hits: existing.hits + (hit ? 1 : 0),
       misses: existing.misses + (hit ? 0 : 1),
-      totalTimeMs: existing.totalTimeMs + timeMs,
+      hitTimeMs: existing.hitTimeMs + (hit ? timeMs : 0),
     });
   }
 

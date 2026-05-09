@@ -12,7 +12,7 @@ export interface KeyHealth {
   char: string;
   hits: number;
   misses: number;
-  totalTimeMs: number;
+  hitTimeMs: number;
   /** WPM derived from mean keypress time: 60_000 / (mean_ms * CHARS_PER_WORD). */
   wpm: number;
   /** Bayesian-smoothed accuracy. */
@@ -31,11 +31,11 @@ export function computeKeyHealth(
     const row = index.get(`char1:${char}`);
     const hits = row?.hits ?? 0;
     const misses = row?.misses ?? 0;
-    const totalTimeMs = row?.total_time_ms ?? 0;
-    const meanMs = hits > 0 ? totalTimeMs / hits : 0;
+    const hitTimeMs = row?.hit_time_ms ?? 0;
+    const meanMs = hits > 0 ? hitTimeMs / hits : 0;
     const wpm = meanMs > 0 ? 60_000 / (meanMs * CHARS_PER_WORD) : 0;
     const accuracy = smoothedAccuracy(hits, misses);
-    return { char, hits, misses, totalTimeMs, wpm, accuracy };
+    return { char, hits, misses, hitTimeMs, wpm, accuracy };
   });
 }
 

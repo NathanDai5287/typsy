@@ -29,7 +29,7 @@ export interface PerFingerStats {
   finger: FingerLabel;
   hits: number;
   misses: number;
-  totalTimeMs: number;
+  hitTimeMs: number;
   /** WPM derived from mean keypress time across all char1 hits on this finger. */
   wpm: number;
   /** Bayesian-smoothed accuracy. */
@@ -67,7 +67,7 @@ export function perFingerStats(
   const init = (): Omit<PerFingerStats, 'finger' | 'wpm' | 'accuracy'> => ({
     hits: 0,
     misses: 0,
-    totalTimeMs: 0,
+    hitTimeMs: 0,
   });
   const buckets = new Map<FingerLabel, ReturnType<typeof init>>();
   for (const f of FINGER_ORDER) buckets.set(f, init());
@@ -79,12 +79,12 @@ export function perFingerStats(
     const b = buckets.get(finger)!;
     b.hits += row.hits;
     b.misses += row.misses;
-    b.totalTimeMs += row.total_time_ms;
+    b.hitTimeMs += row.hit_time_ms;
   }
 
   return FINGER_ORDER.map((finger) => {
     const b = buckets.get(finger)!;
-    const meanMs = b.hits > 0 ? b.totalTimeMs / b.hits : 0;
+    const meanMs = b.hits > 0 ? b.hitTimeMs / b.hits : 0;
     const wpm = meanMs > 0 ? 60_000 / (meanMs * CHARS_PER_WORD) : 0;
     const accuracy = smoothedAccuracy(b.hits, b.misses);
     return { finger, ...b, wpm, accuracy };
@@ -146,7 +146,7 @@ export function buildKeyStats(ngramRows: readonly NgramStat[]): Map<string, KeyS
   const map = new Map<string, KeyStat>();
   for (const row of ngramRows) {
     if (row.ngram_type !== 'char1') continue;
-    const meanMs = row.hits > 0 ? row.total_time_ms / row.hits : 0;
+    const meanMs = row.hits > 0 ? row.hit_time_ms / row.hits : 0;
     const wpm = meanMs > 0 ? 60_000 / (meanMs * CHARS_PER_WORD) : 0;
     const accuracy = smoothedAccuracy(row.hits, row.misses);
     map.set(row.ngram, { wpm, accuracy });
@@ -215,14 +215,13 @@ export interface SlowNgram {
 }
 
 /**
- * Top-K slowest ngrams of a given type, ranked by mean keypress time
- * (highest first). For a bigram "AB", `meanMs` is the time between the
- * A and B keystrokes; for a word, it's the mean inter-key time.
+ * Top-K slowest ngrams of a given type, ranked by mean keypress time on
+ * successful first-attempt keystrokes only. For a bigram "AB", `meanMs`
+ * is the average time between the A and B keypresses on clean attempts.
  *
- * Mean is computed as `total_time_ms / hits` to match `perFingerStats`,
- * so only successful trials contribute to the denominator. Rows with no
- * hits or fewer than `minAttempts` total attempts are skipped to avoid
- * noise from a handful of mistypes.
+ * Word types have `hit_time_ms = 0` by design (word slowness should be
+ * reconstructed from char-level data via `findSlowWordsWithBigram`), so
+ * `topSlowNgrams(rows, 'word1' | 'word2')` returns an empty array.
  */
 export function topSlowNgrams(
   ngramRows: readonly NgramStat[],
@@ -237,7 +236,7 @@ export function topSlowNgrams(
     if (row.hits + row.misses < minAttempts) continue;
     if (row.hits <= 0) continue;
     if (expectedLength !== null && row.ngram.length !== expectedLength) continue;
-    const meanMs = row.total_time_ms / row.hits;
+    const meanMs = row.hit_time_ms / row.hits;
     if (meanMs <= 0) continue;
     out.push({
       ngram: row.ngram,
@@ -386,21 +385,21 @@ export function findWordsWithBigram(
  * Find words that contain a given bigram, ranked by reconstructed
  * word-typing time (slowest first).
  *
- * The tracker's `word1.total_time_ms` only accumulates the inter-keypress
- * interval before the trailing space — meaningless as "time to type this
- * word." Instead, we reconstruct word time from char-level data:
+ * Word-level rows have `hit_time_ms = 0` (the trailing-space keypress isn't
+ * a meaningful word time), so we reconstruct word time from char-level
+ * data:
  *
  *   word_time_ms = char1[word[0]].mean
  *                + Σ char2[word[i-1]+word[i]].mean   for i in 1..len-1
  *
- * Each char1 mean is the user's average inter-keypress time at that key,
- * and each char2 mean is the average transition time between consecutive
- * keys. Summing them estimates how long the user takes to type the word
- * as a whole.
+ * Each char1 mean is the user's average inter-keypress time at that key on
+ * clean attempts, and each char2 mean is the average transition time
+ * between consecutive keys on clean attempts. Summing them estimates how
+ * long the user takes to type the word as a whole.
  *
  * A word is included only if every needed char1 + char2 mean is available.
- * In practice that's true for any word the user has actually typed, since
- * the tracker writes both on every clean keystroke.
+ * In practice that's true for any word the user has typed, since the
+ * tracker writes both on every clean keystroke.
  */
 export function findSlowWordsWithBigram(
   ngramRows: readonly NgramStat[],
@@ -413,7 +412,7 @@ export function findSlowWordsWithBigram(
   const char2Mean = new Map<string, number>();
   for (const row of ngramRows) {
     if (row.hits <= 0) continue;
-    const m = row.total_time_ms / row.hits;
+    const m = row.hit_time_ms / row.hits;
     if (m <= 0) continue;
     if (row.ngram_type === 'char1' && row.ngram.length === 1) {
       char1Mean.set(row.ngram, m);

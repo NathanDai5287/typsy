@@ -30,10 +30,10 @@ describe('generateDrillSequence', () => {
   it('contains repeated bursts of the user\'s weakest bigram', () => {
     // Make "an" overwhelmingly the worst bigram in the allowed set.
     const userIndex = indexNgramStats([
-      { ngram: 'an', ngram_type: 'char2', hits: 5, misses: 95, total_time_ms: 0 },
-      { ngram: 'at', ngram_type: 'char2', hits: 100, misses: 0, total_time_ms: 0 },
-      { ngram: 'en', ngram_type: 'char2', hits: 100, misses: 0, total_time_ms: 0 },
-      { ngram: 'ne', ngram_type: 'char2', hits: 100, misses: 0, total_time_ms: 0 },
+      { ngram: 'an', ngram_type: 'char2', hits: 5, misses: 95, hit_time_ms: 0 },
+      { ngram: 'at', ngram_type: 'char2', hits: 100, misses: 0, hit_time_ms: 0 },
+      { ngram: 'en', ngram_type: 'char2', hits: 100, misses: 0, hit_time_ms: 0 },
+      { ngram: 'ne', ngram_type: 'char2', hits: 100, misses: 0, hit_time_ms: 0 },
     ]);
     const seq = generateDrillSequence({
       allowed,
@@ -53,7 +53,7 @@ describe('generateDrillSequence', () => {
     // Allow enough chars that real words are reachable.
     const wide = new Set(['a', 'e', 'i', 'n', 'o', 'r', 's', 't', 'h']);
     const userIndex = indexNgramStats([
-      { ngram: 'th', ngram_type: 'char2', hits: 5, misses: 95, total_time_ms: 0 },
+      { ngram: 'th', ngram_type: 'char2', hits: 5, misses: 95, hit_time_ms: 0 },
     ]);
     const seq = generateDrillSequence({
       allowed: wide,
@@ -74,8 +74,8 @@ describe('generateDrillSequence', () => {
   it('includes user-weak words when they meet the attempts threshold', () => {
     const userIndex = indexNgramStats([
       // Two user-tracked words; "tan" is much worse than "tea".
-      { ngram: 'tan', ngram_type: 'word1', hits: 2, misses: 18, total_time_ms: 0 },
-      { ngram: 'tea', ngram_type: 'word1', hits: 20, misses: 0, total_time_ms: 0 },
+      { ngram: 'tan', ngram_type: 'word1', hits: 2, misses: 18, hit_time_ms: 0 },
+      { ngram: 'tea', ngram_type: 'word1', hits: 20, misses: 0, hit_time_ms: 0 },
     ]);
     const seq = generateDrillSequence({
       allowed,
@@ -212,7 +212,7 @@ describe('generateDrillSequence', () => {
     // set uses the prior, then run many drills and assert "an" appears
     // in the strong majority of bursts.
     const userIndex = indexNgramStats([
-      { ngram: 'an', ngram_type: 'char2', hits: 5, misses: 95, total_time_ms: 0 },
+      { ngram: 'an', ngram_type: 'char2', hits: 5, misses: 95, hit_time_ms: 0 },
     ]);
     const seedRng = (seed: number) => () => {
       seed = (seed * 9301 + 49297) % 233280;

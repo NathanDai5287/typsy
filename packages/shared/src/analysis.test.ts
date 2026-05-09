@@ -27,7 +27,7 @@ function row(
   type: NgramStat['ngram_type'],
   hits: number,
   misses: number,
-  totalTimeMs = 0,
+  hitTimeMs = 0,
 ): NgramStat {
   return {
     user_id: 1,
@@ -36,7 +36,7 @@ function row(
     ngram_type: type,
     hits,
     misses,
-    total_time_ms: totalTimeMs,
+    hit_time_ms: hitTimeMs,
     last_seen_at: '2024-01-01',
   };
 }
@@ -261,14 +261,14 @@ describe('sessionsAsSmoothedSeries', () => {
 describe('findSlowWordsWithBigram', () => {
   // Word time is reconstructed as char1[first] + Σ char2[transitions].
   // Helper: register the per-char/per-bigram means as ngram_stats rows so the
-  // function can read them. mean = total_time_ms / hits, so we set hits=1 and
-  // total_time_ms = the desired mean directly.
+  // function can read them. mean = hit_time_ms / hits, so we set hits=1 and
+  // hit_time_ms = the desired mean directly.
   const charRow = (ng: string, type: 'char1' | 'char2', meanMs: number): NgramStat =>
     row(ng, type, 1, 0, meanMs);
 
   it('reconstructs word time from char-level data and ranks slowest first', () => {
     const rows: NgramStat[] = [
-      // word1 entries (only existence + .ngram matter; total_time_ms is unused)
+      // word1 entries (only existence + .ngram matter; hit_time_ms is unused)
       row('cat', 'word1', 5, 0, 0),
       row('cab', 'word1', 5, 0, 0),
       row('hi',  'word1', 5, 0, 0),  // doesn't contain "ca" → skipped

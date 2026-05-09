@@ -65,7 +65,7 @@ describe('generateFlowLine', () => {
     const allowed = new Set('abcdefghijklmnopqrstuvwxyz'.split(''));
     // Pin "er" to a near-certain error rate; everything else uses the prior.
     const userIndex = indexNgramStats([
-      { ngram: 'er', ngram_type: 'char2', hits: 0, misses: 1000, total_time_ms: 0 },
+      { ngram: 'er', ngram_type: 'char2', hits: 0, misses: 1000, hit_time_ms: 0 },
     ]);
     const seedRng = (seed: number) => () => {
       seed = (seed * 9301 + 49297) % 233280;
@@ -104,7 +104,7 @@ describe('generateFlowLine', () => {
         ngram_type: 'word1' as const,
         hits: 0,
         misses: 200,
-        total_time_ms: 0,
+        hit_time_ms: 0,
       })),
     );
     const seedRng = (seed: number) => () => {
@@ -219,15 +219,15 @@ describe('generateFlowLine', () => {
     // the user's baseline. "er" sits at 800ms (4× baseline).
     const userIndex = indexNgramStats([
       // 1000 hits at 200ms each → mean = 200ms
-      { ngram: 'th', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 200_000 },
-      { ngram: 'he', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 200_000 },
-      { ngram: 'in', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 200_000 },
-      { ngram: 'an', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 200_000 },
-      { ngram: 're', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 200_000 },
-      { ngram: 'on', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 200_000 },
-      { ngram: 'at', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 200_000 },
+      { ngram: 'th', ngram_type: 'char2', hits: 1000, misses: 0, hit_time_ms: 200_000 },
+      { ngram: 'he', ngram_type: 'char2', hits: 1000, misses: 0, hit_time_ms: 200_000 },
+      { ngram: 'in', ngram_type: 'char2', hits: 1000, misses: 0, hit_time_ms: 200_000 },
+      { ngram: 'an', ngram_type: 'char2', hits: 1000, misses: 0, hit_time_ms: 200_000 },
+      { ngram: 're', ngram_type: 'char2', hits: 1000, misses: 0, hit_time_ms: 200_000 },
+      { ngram: 'on', ngram_type: 'char2', hits: 1000, misses: 0, hit_time_ms: 200_000 },
+      { ngram: 'at', ngram_type: 'char2', hits: 1000, misses: 0, hit_time_ms: 200_000 },
       // "er" is the slow one: 800ms / hit
-      { ngram: 'er', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 800_000 },
+      { ngram: 'er', ngram_type: 'char2', hits: 1000, misses: 0, hit_time_ms: 800_000 },
     ]);
     const seedRng = (seed: number) => () => {
       seed = (seed * 9301 + 49297) % 233280;
@@ -260,7 +260,7 @@ describe('generateFlowLine', () => {
     // Words containing "ing" should win via the trigram path alone.
     const allowed = new Set('abcdefghijklmnopqrstuvwxyz'.split(''));
     const userIndex = indexNgramStats([
-      { ngram: 'ing', ngram_type: 'char3', hits: 0, misses: 1000, total_time_ms: 0 },
+      { ngram: 'ing', ngram_type: 'char3', hits: 0, misses: 1000, hit_time_ms: 0 },
     ]);
     const seedRng = (seed: number) => () => {
       seed = (seed * 9301 + 49297) % 233280;
@@ -316,7 +316,7 @@ describe('generateFlowLine', () => {
     const allowed = new Set('abcdefghijklmnopqrstuvwxyz'.split(''));
     const userIndex = indexNgramStats([
       // Below minSlowSamples (default 10) → slowness ignored
-      { ngram: 'er', ngram_type: 'char2', hits: 5, misses: 0, total_time_ms: 5_000 }, // would be 1000ms/hit
+      { ngram: 'er', ngram_type: 'char2', hits: 5, misses: 0, hit_time_ms: 5_000 }, // would be 1000ms/hit
     ]);
     const seedRng = (seed: number) => () => {
       seed = (seed * 9301 + 49297) % 233280;
@@ -346,7 +346,7 @@ describe('generateFlowLine', () => {
     // contain noticeably fewer "th" words than a 0% random one.
     const allowed = new Set('abcdefghijklmnopqrstuvwxyz'.split(''));
     const userIndex = indexNgramStats([
-      { ngram: 'th', ngram_type: 'char2', hits: 0, misses: 1000, total_time_ms: 0 },
+      { ngram: 'th', ngram_type: 'char2', hits: 0, misses: 1000, hit_time_ms: 0 },
     ]);
     const seedRng = (seed: number) => () => {
       seed = (seed * 9301 + 49297) % 233280;
@@ -417,21 +417,21 @@ describe('generateFlowLine', () => {
   it('alpha=0 + delta=0 makes timing data invisible to scoring', () => {
     // Knob test: zeroing both slowness coefficients should make the
     // generator ignore timing data entirely. Two indexes identical in
-    // error counts but wildly different in `total_time_ms` must
+    // error counts but wildly different in `hit_time_ms` must
     // produce identical output once `alpha=0, delta=0`.
     const allowed = new Set('abcdefghijklmnopqrstuvwxyz'.split(''));
     const fast = indexNgramStats([
-      { ngram: 'th', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 200_000 },
-      { ngram: 'he', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 200_000 },
-      { ngram: 'in', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 200_000 },
-      { ngram: 'er', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 200_000 },
+      { ngram: 'th', ngram_type: 'char2', hits: 1000, misses: 0, hit_time_ms: 200_000 },
+      { ngram: 'he', ngram_type: 'char2', hits: 1000, misses: 0, hit_time_ms: 200_000 },
+      { ngram: 'in', ngram_type: 'char2', hits: 1000, misses: 0, hit_time_ms: 200_000 },
+      { ngram: 'er', ngram_type: 'char2', hits: 1000, misses: 0, hit_time_ms: 200_000 },
     ]);
     const slow = indexNgramStats([
-      { ngram: 'th', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 200_000 },
-      { ngram: 'he', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 200_000 },
-      { ngram: 'in', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 200_000 },
+      { ngram: 'th', ngram_type: 'char2', hits: 1000, misses: 0, hit_time_ms: 200_000 },
+      { ngram: 'he', ngram_type: 'char2', hits: 1000, misses: 0, hit_time_ms: 200_000 },
+      { ngram: 'in', ngram_type: 'char2', hits: 1000, misses: 0, hit_time_ms: 200_000 },
       // "er" is wildly slow ONLY in the slow index
-      { ngram: 'er', ngram_type: 'char2', hits: 1000, misses: 0, total_time_ms: 800_000 },
+      { ngram: 'er', ngram_type: 'char2', hits: 1000, misses: 0, hit_time_ms: 800_000 },
     ]);
     const seedRng = (seed: number) => () => {
       seed = (seed * 9301 + 49297) % 233280;
