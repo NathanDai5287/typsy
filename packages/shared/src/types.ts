@@ -69,7 +69,15 @@ export interface NgramStat {
   ngram_type: 'char1' | 'char2' | 'char3' | 'word1' | 'word2';
   hits: number;
   misses: number;
-  total_time_ms: number;
+  /**
+   * Sum of inter-keypress times across successful first-attempt keystrokes
+   * only (miss times are discarded). Mean = `hit_time_ms / hits`.
+   *
+   * For `word1` / `word2` types this is always 0 — the trailing-space
+   * keystroke isn't a meaningful "word time," and word slowness is better
+   * derived from char-level data via `findSlowWordsWithBigram`.
+   */
+  hit_time_ms: number;
   last_seen_at: string;
 }
 
@@ -142,7 +150,8 @@ export interface NgramBatchDelta {
   ngram_type: 'char1' | 'char2' | 'char3' | 'word1' | 'word2';
   hits_delta: number;
   misses_delta: number;
-  time_delta_ms: number;
+  /** Sum of inter-keypress times for HITS only in this batch window. */
+  hit_time_delta_ms: number;
 }
 
 /**

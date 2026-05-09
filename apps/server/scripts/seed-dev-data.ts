@@ -56,20 +56,33 @@ const SYNTHETIC_WEAK_BIGRAMS: { ngram: string; missRate: number }[] = [
 interface Stats {
   hits: number;
   misses: number;
-  totalTimeMs: number;
+  hitTimeMs: number;
 }
 
-function bumpStats(map: Map<string, Stats>, key: string, attempts: number, missRate: number) {
+/**
+ * `recordTime` should be true for char-level stats (where each hit
+ * contributes one inter-keypress interval) and false for word-level stats
+ * (which carry hits/misses only — word slowness is reconstructed from
+ * char-level data).
+ */
+function bumpStats(
+  map: Map<string, Stats>,
+  key: string,
+  attempts: number,
+  missRate: number,
+  recordTime: boolean = true,
+) {
   if (attempts <= 0) return;
   const misses = Math.round(attempts * missRate);
   const hits = attempts - misses;
+  const timeAdd = recordTime ? hits * MEAN_KEYPRESS_MS : 0;
   const existing = map.get(key);
   if (existing) {
     existing.hits += hits;
     existing.misses += misses;
-    existing.totalTimeMs += hits * MEAN_KEYPRESS_MS;
+    existing.hitTimeMs += timeAdd;
   } else {
-    map.set(key, { hits, misses, totalTimeMs: hits * MEAN_KEYPRESS_MS });
+    map.set(key, { hits, misses, hitTimeMs: timeAdd });
   }
 }
 
@@ -141,7 +154,7 @@ function main(): void {
       bumpStats(trigramStats, trigram, attempts, BASELINE_MISS_RATE);
     }
 
-    bumpStats(wordStats, word, attempts, BASELINE_MISS_RATE);
+    bumpStats(wordStats, word, attempts, BASELINE_MISS_RATE, /* recordTime */ false);
   }
 
   // Belt-and-suspenders: ensure the synthetic user row exists. seed.ts
@@ -161,7 +174,7 @@ function main(): void {
 
     const insertNgram = db.prepare(
       `INSERT INTO ngram_stats
-         (user_id, layout_id, ngram, ngram_type, hits, misses, total_time_ms)
+         (user_id, layout_id, ngram, ngram_type, hits, misses, hit_time_ms)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     );
     const bulkInsert = (map: Map<string, Stats>, type: string) => {
@@ -173,7 +186,7 @@ function main(): void {
           type,
           s.hits,
           s.misses,
-          s.totalTimeMs,
+          s.hitTimeMs,
         );
       }
     };

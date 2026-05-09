@@ -123,13 +123,23 @@ describe('NgramTracker', () => {
 
   // ─── time tracking ────────────────────────────────────────────────────────
 
-  it('accumulates totalTimeMs', () => {
+  it('accumulates hitTimeMs on hits', () => {
     tracker.recordChar('t', 't', 120);
     tracker.recordChar('h', 'h', 80);
     const pending = tracker.getPendingForTest();
-    expect(pending.get('char1:t')?.totalTimeMs).toBe(120);
-    expect(pending.get('char1:h')?.totalTimeMs).toBe(80);
-    expect(pending.get('char2:th')?.totalTimeMs).toBe(80);
+    expect(pending.get('char1:t')?.hitTimeMs).toBe(120);
+    expect(pending.get('char1:h')?.hitTimeMs).toBe(80);
+    expect(pending.get('char2:th')?.hitTimeMs).toBe(80);
+  });
+
+  it('does NOT accumulate hitTimeMs on misses', () => {
+    tracker.recordChar('t', 't', 100);
+    tracker.recordChar('x', 'h', 800); // miss with a long pause — discarded
+    const pending = tracker.getPendingForTest();
+    expect(pending.get('char1:h')?.misses).toBe(1);
+    expect(pending.get('char1:h')?.hitTimeMs).toBe(0);
+    expect(pending.get('char2:th')?.misses).toBe(1);
+    expect(pending.get('char2:th')?.hitTimeMs).toBe(0);
   });
 
   // ─── flush ────────────────────────────────────────────────────────────────

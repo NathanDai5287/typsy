@@ -34,8 +34,8 @@ describe('buildMaskedTransitions', () => {
 
   it('weakness bias amplifies bigrams the user struggles with', () => {
     const userIdx = indexNgramStats([
-      { ngram: 'an', ngram_type: 'char2', hits: 30, misses: 70, total_time_ms: 0 },
-      { ngram: 'at', ngram_type: 'char2', hits: 100, misses: 0, total_time_ms: 0 },
+      { ngram: 'an', ngram_type: 'char2', hits: 30, misses: 70, hit_time_ms: 0 },
+      { ngram: 'at', ngram_type: 'char2', hits: 100, misses: 0, hit_time_ms: 0 },
     ]);
     const noBias = buildMaskedTransitions(allowed, userIdx, 0);
     const heavyBias = buildMaskedTransitions(allowed, userIdx, 100);
@@ -82,9 +82,9 @@ describe('generateMarkovSequence', () => {
 describe('topWeakBigrams', () => {
   it('returns the user\'s weakest bigrams limited to allowed chars', () => {
     const userIdx = indexNgramStats([
-      { ngram: 'an', ngram_type: 'char2', hits: 30, misses: 70, total_time_ms: 0 },
-      { ngram: 'na', ngram_type: 'char2', hits: 30, misses: 70, total_time_ms: 0 },
-      { ngram: 'qa', ngram_type: 'char2', hits: 0, misses: 100, total_time_ms: 0 }, // 'q' not allowed
+      { ngram: 'an', ngram_type: 'char2', hits: 30, misses: 70, hit_time_ms: 0 },
+      { ngram: 'na', ngram_type: 'char2', hits: 30, misses: 70, hit_time_ms: 0 },
+      { ngram: 'qa', ngram_type: 'char2', hits: 0, misses: 100, hit_time_ms: 0 }, // 'q' not allowed
     ]);
     const weak = topWeakBigrams(userIdx, allowed, 5);
     // 'qa' must be filtered out.

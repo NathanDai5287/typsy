@@ -124,9 +124,18 @@ export default function DashboardPage(): JSX.Element {
     [positions, posFingerMap],
   );
 
-  const series = useMemo(
-    () => sessionsAsSmoothedSeries(sessions ?? [], { window: 5 }),
+  // Zen mode is exempt from dashboard stats (per PR #61) — it's a free-form
+  // typing surface, not a performance practice. We filter sessions here and
+  // route every session-based stat (series, streak, totals, "no data" gate)
+  // through `dashboardSessions`.
+  const dashboardSessions = useMemo(
+    () => (sessions ?? []).filter((s) => s.mode !== 'zen'),
     [sessions],
+  );
+
+  const series = useMemo(
+    () => sessionsAsSmoothedSeries(dashboardSessions, { window: 5 }),
+    [dashboardSessions],
   );
   const fingerAgg = useMemo(
     () =>
@@ -165,9 +174,9 @@ export default function DashboardPage(): JSX.Element {
     return map;
   }, [bigramWordMisses]);
 
-  const streak = useMemo(() => dayStreak(sessions ?? []), [sessions]);
-  const totalChars = useMemo(() => totalCharsTyped(sessions ?? []), [sessions]);
-  const lastSession = sessions?.[0];
+  const streak = useMemo(() => dayStreak(dashboardSessions), [dashboardSessions]);
+  const totalChars = useMemo(() => totalCharsTyped(dashboardSessions), [dashboardSessions]);
+  const lastSession = dashboardSessions[0];
 
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
 
@@ -194,15 +203,15 @@ export default function DashboardPage(): JSX.Element {
     return <Navigate to="/onboarding" replace />;
   }
 
-  const noData = (sessions?.length ?? 0) === 0;
+  const noData = dashboardSessions.length === 0;
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-5">
       <header>
         <h1 className="text-xl text-fg_h">dashboard</h1>
         <p className="text-fg3 text-sm mt-0.5">
-          {activeLayout.name} · {sessions?.length ?? 0} session
-          {sessions?.length === 1 ? '' : 's'}
+          {activeLayout.name} · {dashboardSessions.length} session
+          {dashboardSessions.length === 1 ? '' : 's'}
         </p>
       </header>
 

@@ -84,8 +84,8 @@ function meanTimeOrNull(
   const row = userIndex.get(`${type}:${ngram}`);
   if (!row) return null;
   if (row.hits + row.misses < minSamples) return null;
-  if (row.hits <= 0 || row.total_time_ms <= 0) return null;
-  return row.total_time_ms / row.hits;
+  if (row.hits <= 0 || row.hit_time_ms <= 0) return null;
+  return row.hit_time_ms / row.hits;
 }
 
 function bigramTimeMs(userIndex: NgramIndex, bigram: string, minSamples: number): number | null {
@@ -111,8 +111,8 @@ function computeUserBaselineMs(userIndex: NgramIndex, minSamples: number, defaul
   for (const [key, row] of userIndex) {
     if (!key.startsWith('char2:')) continue;
     if (row.hits + row.misses < minSamples) continue;
-    if (row.hits <= 0 || row.total_time_ms <= 0) continue;
-    times.push(row.total_time_ms / row.hits);
+    if (row.hits <= 0 || row.hit_time_ms <= 0) continue;
+    times.push(row.hit_time_ms / row.hits);
   }
   if (times.length === 0) return defaultMs;
   times.sort((a, b) => a - b);

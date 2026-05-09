@@ -22,12 +22,12 @@ router.post('/batch', (req, res) => {
 
   const upsertNgram = db.prepare(
     `INSERT INTO ngram_stats
-       (user_id, layout_id, ngram, ngram_type, hits, misses, total_time_ms, last_seen_at)
+       (user_id, layout_id, ngram, ngram_type, hits, misses, hit_time_ms, last_seen_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
      ON CONFLICT(user_id, layout_id, ngram, ngram_type) DO UPDATE SET
        hits = hits + excluded.hits,
        misses = misses + excluded.misses,
-       total_time_ms = total_time_ms + excluded.total_time_ms,
+       hit_time_ms = hit_time_ms + excluded.hit_time_ms,
        last_seen_at = excluded.last_seen_at`,
   );
 
@@ -49,7 +49,7 @@ router.post('/batch', (req, res) => {
         delta.ngram_type,
         delta.hits_delta,
         delta.misses_delta,
-        delta.time_delta_ms,
+        delta.hit_time_delta_ms,
       );
     }
     if (bigram_word_misses) {

@@ -26,18 +26,18 @@ describe('generateZenLine', () => {
     // Baseline: ~200ms, but give some bigrams very fast times.
     const rows = indexNgramStats([
       // that: th ha at (great)
-      { ngram: 'th', ngram_type: 'char2', hits: 50, misses: 0, total_time_ms: 50 * 120 },
-      { ngram: 'ha', ngram_type: 'char2', hits: 50, misses: 0, total_time_ms: 50 * 120 },
-      { ngram: 'at', ngram_type: 'char2', hits: 50, misses: 0, total_time_ms: 50 * 120 },
-      { ngram: 'tha', ngram_type: 'char3', hits: 30, misses: 0, total_time_ms: 30 * 120 },
-      { ngram: 'hat', ngram_type: 'char3', hits: 30, misses: 0, total_time_ms: 30 * 120 },
+      { ngram: 'th', ngram_type: 'char2', hits: 50, misses: 0, hit_time_ms: 50 * 120 },
+      { ngram: 'ha', ngram_type: 'char2', hits: 50, misses: 0, hit_time_ms: 50 * 120 },
+      { ngram: 'at', ngram_type: 'char2', hits: 50, misses: 0, hit_time_ms: 50 * 120 },
+      { ngram: 'tha', ngram_type: 'char3', hits: 30, misses: 0, hit_time_ms: 30 * 120 },
+      { ngram: 'hat', ngram_type: 'char3', hits: 30, misses: 0, hit_time_ms: 30 * 120 },
 
       // hate: ha at te (worse accuracy, slower)
-      { ngram: 'te', ngram_type: 'char2', hits: 10, misses: 10, total_time_ms: 10 * 260 },
+      { ngram: 'te', ngram_type: 'char2', hits: 10, misses: 10, hit_time_ms: 10 * 260 },
 
       // Word-level confidence (word1)
-      { ngram: 'that', ngram_type: 'word1', hits: 40, misses: 0, total_time_ms: 40 * 200 },
-      { ngram: 'hate', ngram_type: 'word1', hits: 10, misses: 5, total_time_ms: 10 * 240 },
+      { ngram: 'that', ngram_type: 'word1', hits: 40, misses: 0, hit_time_ms: 40 * 200 },
+      { ngram: 'hate', ngram_type: 'word1', hits: 10, misses: 5, hit_time_ms: 10 * 240 },
     ]);
 
     const line = generateZenLine({

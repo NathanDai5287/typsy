@@ -13,8 +13,8 @@ const baseRow = (
   type: NgramStatRow['ngram_type'],
   hits: number,
   misses: number,
-  totalTimeMs = 0,
-): NgramStatRow => ({ ngram, ngram_type: type, hits, misses, total_time_ms: totalTimeMs });
+  hitTimeMs = 0,
+): NgramStatRow => ({ ngram, ngram_type: type, hits, misses, hit_time_ms: hitTimeMs });
 
 describe('indexNgramStats / totalAttempts', () => {
   it('sums hits + misses correctly', () => {
@@ -63,7 +63,7 @@ describe('weaknessScore', () => {
 });
 
 describe('meanTimePerHit', () => {
-  it('returns total_time_ms / hits when hits > 0', () => {
+  it('returns hit_time_ms / hits when hits > 0', () => {
     const idx = indexNgramStats([baseRow('t', 'char1', 4, 1, 800)]);
     expect(meanTimePerHit(idx, 'char1', 't')).toBe(200);
   });

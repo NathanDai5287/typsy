@@ -6,7 +6,7 @@ export interface NgramStatRow {
   ngram_type: 'char1' | 'char2' | 'char3' | 'word1' | 'word2';
   hits: number;
   misses: number;
-  total_time_ms: number;
+  hit_time_ms: number;
 }
 
 /** Fast lookup map: `${type}:${ngram}` → row. */
@@ -88,7 +88,7 @@ export function meanTimePerHit(
 ): number {
   const row = index.get(`${type}:${ngram}`);
   if (!row || row.hits === 0) return 0;
-  return row.total_time_ms / row.hits;
+  return row.hit_time_ms / row.hits;
 }
 
 /**

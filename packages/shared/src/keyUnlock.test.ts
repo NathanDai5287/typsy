@@ -13,14 +13,14 @@ function row(
   char: string,
   hits: number,
   misses: number,
-  totalTimeMs: number,
+  hitTimeMs: number,
 ): NgramStatRow {
   return {
     ngram: char,
     ngram_type: 'char1',
     hits,
     misses,
-    total_time_ms: totalTimeMs,
+    hit_time_ms: hitTimeMs,
   };
 }
 
