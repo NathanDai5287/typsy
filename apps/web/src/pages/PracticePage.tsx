@@ -715,7 +715,16 @@ export default function PracticePage(): JSX.Element {
       );
       setTotalKeystrokes(currentTotalKeystrokes);
 
-      ngramTrackerRef.current?.recordChar(logicalChar, expected, timeSinceLastMs);
+      // Extract the full target word containing the current cursor (used by
+      // the tracker to attribute per-bigram missed-word context).
+      const sentence = sentenceRef.current;
+      const lastSpaceBefore = sentence.lastIndexOf(' ', currentCursor - 1);
+      const nextSpaceAt = sentence.indexOf(' ', currentCursor);
+      const wordStart = lastSpaceBefore + 1;
+      const wordEnd = nextSpaceAt === -1 ? sentence.length : nextSpaceAt;
+      const targetWord = sentence.slice(wordStart, wordEnd);
+
+      ngramTrackerRef.current?.recordChar(logicalChar, expected, timeSinceLastMs, targetWord);
 
       let st = startTimeRef.current;
       if (st === null) {
