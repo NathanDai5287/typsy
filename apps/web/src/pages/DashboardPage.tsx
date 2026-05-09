@@ -13,6 +13,7 @@ import {
   buildFingerMap,
   buildKeyStats,
   dayStreak,
+  findSlowWordsWithBigram,
   perFingerStats,
   sessionsAsSmoothedSeries,
   sfbRate,
@@ -176,6 +177,13 @@ export default function DashboardPage(): JSX.Element {
   const [hoveredBigram, setHoveredBigram] = useState<string | null>(null);
   const activeBigram = pinnedBigram ?? hoveredBigram;
   const activeMisses = activeBigram ? missesByBigram.get(activeBigram) ?? [] : [];
+  const activeSlowWords = useMemo(
+    () =>
+      activeBigram
+        ? findSlowWordsWithBigram(ngramRows ?? [], activeBigram, 5)
+        : [],
+    [activeBigram, ngramRows],
+  );
 
   if (!userData || !layouts) {
     return (
@@ -432,6 +440,7 @@ export default function DashboardPage(): JSX.Element {
           bigram={activeBigram}
           pinned={!!pinnedBigram}
           misses={activeMisses}
+          slowWords={activeSlowWords}
         />
       </div>
 
@@ -579,13 +588,15 @@ function BigramDetailsPanel({
   bigram,
   pinned,
   misses,
+  slowWords,
 }: {
   bigram: string | null;
   pinned: boolean;
   misses: readonly BigramWordMiss[];
+  slowWords: readonly { word: string; wpm: number; hits: number; misses: number }[];
 }): JSX.Element {
   return (
-    <section className="panel p-4 md:sticky md:top-4 self-start">
+    <section className="panel p-4 md:sticky md:top-4 self-start space-y-4">
       <PanelHeading>
         {bigram ? (
           <>
@@ -598,38 +609,80 @@ function BigramDetailsPanel({
           'bigram details'
         )}
       </PanelHeading>
+
       {!bigram ? (
         <p className="text-fg4 text-[11px]">hover a bigram to preview, click to pin</p>
-      ) : misses.length === 0 ? (
-        <p className="text-fg4 text-sm">no missed-word context recorded yet for this bigram</p>
       ) : (
-        <table className="w-full text-sm font-mono">
-          <thead className="text-left text-fg4 text-[10px] uppercase tracking-widest">
-            <tr>
-              <th className="py-1 font-normal">target</th>
-              <th className="py-1 font-normal">typed</th>
-              <th className="py-1 font-normal text-right">misses</th>
-            </tr>
-          </thead>
-          <tbody>
-            {misses.slice(0, 10).map((m) => (
-              <tr
-                key={`${m.target_word}\t${m.typed_word}`}
-                className="border-t border-bg4"
-              >
-                <td className="py-1">
-                  <DiffWord word={m.target_word} divergeIdx={m.typed_word.length - 1} />
-                </td>
-                <td className="py-1">
-                  <DiffWord word={m.typed_word} divergeIdx={m.typed_word.length - 1} />
-                </td>
-                <td className="py-1 text-right tabular-nums text-red-400">
-                  {m.miss_count}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <>
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-fg4 mb-1">
+              missed in
+            </div>
+            {misses.length === 0 ? (
+              <p className="text-fg4 text-[11px]">no misses recorded yet</p>
+            ) : (
+              <table className="w-full text-sm font-mono">
+                <thead className="text-left text-fg4 text-[10px] uppercase tracking-widest">
+                  <tr>
+                    <th className="py-1 font-normal">target</th>
+                    <th className="py-1 font-normal">typed</th>
+                    <th className="py-1 font-normal text-right">×</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {misses.slice(0, 10).map((m) => (
+                    <tr
+                      key={`${m.target_word}\t${m.typed_word}`}
+                      className="border-t border-bg4"
+                    >
+                      <td className="py-1">
+                        <DiffWord word={m.target_word} divergeIdx={m.typed_word.length - 1} />
+                      </td>
+                      <td className="py-1">
+                        <DiffWord word={m.typed_word} divergeIdx={m.typed_word.length - 1} />
+                      </td>
+                      <td className="py-1 text-right tabular-nums text-red-400">
+                        {m.miss_count}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-fg4 mb-1">
+              slow in
+            </div>
+            {slowWords.length === 0 ? (
+              <p className="text-fg4 text-[11px]">not enough word data yet</p>
+            ) : (
+              <table className="w-full text-sm font-mono">
+                <thead className="text-left text-fg4 text-[10px] uppercase tracking-widest">
+                  <tr>
+                    <th className="py-1 font-normal">word</th>
+                    <th className="py-1 font-normal text-right">wpm</th>
+                    <th className="py-1 font-normal text-right">attempts</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {slowWords.map((s) => (
+                    <tr key={s.word} className="border-t border-bg4">
+                      <td className="py-1 text-fg_h">{s.word}</td>
+                      <td className="py-1 text-right tabular-nums text-orange-400">
+                        {s.wpm.toFixed(1)}
+                      </td>
+                      <td className="py-1 text-right tabular-nums text-fg3">
+                        {s.hits + s.misses}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </>
       )}
     </section>
   );

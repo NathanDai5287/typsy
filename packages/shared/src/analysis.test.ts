@@ -4,6 +4,7 @@ import {
   perFingerStats,
   sfbRate,
   buildErrorHeatmap,
+  findSlowWordsWithBigram,
   topWeakNgrams,
   topSlowNgrams,
   totalCharsTyped,
@@ -133,6 +134,27 @@ describe('topWeakNgrams', () => {
     const top = topWeakNgrams(stats, 'char2', 5);
     expect(top.map((t) => t.ngram)).toEqual(['th']);
   });
+
+  it('skips ngrams with zero actual misses (default minMisses=1)', () => {
+    // Without the minMisses filter, the Bayesian prior would still rank these
+    // — a clean session would surface "weak" bigrams the user has never failed.
+    const stats = [
+      row('th', 'char2', 50, 0),  // 50 hits, 0 misses → smoothed prior ≈ 1.6%
+      row('he', 'char2', 100, 0), // 100 hits, 0 misses → smoothed prior ≈ 0.9%
+      row('an', 'char2', 20, 2),  // real miss data
+    ];
+    const top = topWeakNgrams(stats, 'char2', 5);
+    expect(top.map((t) => t.ngram)).toEqual(['an']);
+  });
+
+  it('honors a higher minMisses threshold', () => {
+    const stats = [
+      row('th', 'char2', 50, 1),
+      row('he', 'char2', 100, 5),
+    ];
+    const top = topWeakNgrams(stats, 'char2', 5, 5, 5);
+    expect(top.map((t) => t.ngram)).toEqual(['he']);
+  });
 });
 
 describe('topSlowNgrams', () => {
@@ -233,6 +255,33 @@ describe('sessionsAsSmoothedSeries', () => {
     const series = sessionsAsSmoothedSeries(sessions, { window: 2 });
     expect(series[1].wpm).toBeGreaterThan(99);
     expect(series[1].accuracy).toBeGreaterThan(0.99);
+  });
+});
+
+describe('findSlowWordsWithBigram', () => {
+  it('returns word1 rows containing the bigram, sorted by mean ms desc', () => {
+    const rows: NgramStat[] = [
+      // mean = 100ms (fast)
+      row('apple', 'word1', 10, 0, 10 * 100),
+      // mean = 300ms (slowest)
+      row('grapple', 'word1', 5, 0, 5 * 300),
+      // mean = 200ms
+      row('crap', 'word1', 8, 1, 8 * 200),
+      // doesn't contain "ap" — skip
+      row('hello', 'word1', 10, 0, 10 * 500),
+    ];
+    const out = findSlowWordsWithBigram(rows, 'ap', 5);
+    expect(out.map((r) => r.word)).toEqual(['grapple', 'crap', 'apple']);
+    expect(out[0].meanMs).toBe(300);
+  });
+
+  it('skips rows below minAttempts', () => {
+    const rows: NgramStat[] = [
+      row('apple', 'word1', 1, 1, 2 * 999), // 2 attempts < default minAttempts=3
+      row('grape', 'word1', 5, 0, 5 * 100),
+    ];
+    const out = findSlowWordsWithBigram(rows, 'ap');
+    expect(out.map((r) => r.word)).toEqual(['grape']);
   });
 });
 
