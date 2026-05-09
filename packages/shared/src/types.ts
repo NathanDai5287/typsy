@@ -168,11 +168,27 @@ export interface BigramWordMissDelta {
   miss_delta: number;
 }
 
+/**
+ * Per-(bigram, target_word) hit-time delta. One delta per batch window
+ * accumulating clean char2 hits inside a known word; the server upserts
+ * into `bigram_word_times.hits` and `.hit_time_ms`. Mean across all
+ * accumulated batches gives "how long this bigram takes inside this word
+ * on clean attempts" for the dashboard's "slow in" subsection.
+ */
+export interface BigramWordTimeDelta {
+  bigram: string;
+  target_word: string;
+  hits_delta: number;
+  hit_time_delta_ms: number;
+}
+
 export interface NgramBatchPayload {
   layout_id: number;
   deltas: NgramBatchDelta[];
   /** Optional per-bigram missed-word context. Server upserts into bigram_word_misses. */
   bigram_word_misses?: BigramWordMissDelta[];
+  /** Optional per-(bigram, word) hit-time deltas. Server upserts into bigram_word_times. */
+  bigram_word_times?: BigramWordTimeDelta[];
 }
 
 export interface BigramWordMiss {
@@ -182,6 +198,16 @@ export interface BigramWordMiss {
   target_word: string;
   typed_word: string;
   miss_count: number;
+  last_seen_at: string;
+}
+
+export interface BigramWordTime {
+  user_id: number;
+  layout_id: number;
+  bigram: string;
+  target_word: string;
+  hits: number;
+  hit_time_ms: number;
   last_seen_at: string;
 }
 

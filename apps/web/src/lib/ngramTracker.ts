@@ -1,8 +1,13 @@
 import { WRITE_FLUSH_INTERVAL_MS } from '@typsy/shared';
-import type { BigramWordMissDelta, NgramBatchDelta } from '@typsy/shared';
+import type {
+  BigramWordMissDelta,
+  BigramWordTimeDelta,
+  NgramBatchDelta,
+} from '@typsy/shared';
 import { postNgramBatch } from './api.ts';
 
 type DeltaEntry = { hits: number; misses: number; hitTimeMs: number };
+type BigramWordTimeEntry = { hits: number; hitTimeMs: number };
 
 /**
  * Tracks per-keystroke ngram stats and per-bigram missed-word context.
@@ -34,6 +39,8 @@ export class NgramTracker {
   private deltas = new Map<string, DeltaEntry>();
   /** Buffer for per-bigram missed-word rows. Key: `${bigram}\t${target}\t${typed}`. */
   private bigramWordMisses = new Map<string, number>();
+  /** Buffer for per-(bigram, word) hit-time rows. Key: `${bigram}\t${target}`. */
+  private bigramWordTimes = new Map<string, BigramWordTimeEntry>();
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private readonly userId: number;
   private readonly layoutId: number;
@@ -82,12 +89,17 @@ export class NgramTracker {
         const bigram = this.hitRing[this.hitRing.length - 1] + expectedChar;
         this.addDelta(`char2:${bigram}`, hit, timeSinceLastMs);
 
+        const tw = this.currentTargetWord;
         if (!hit) {
-          const tw = this.currentTargetWord;
           if (tw) {
             const typedWord = this.currentWord + typedChar;
             this.addBigramWordMiss(bigram, tw, typedWord);
           }
+        } else if (tw) {
+          // Per-(bigram, word) hit-time: drives the dashboard's "slow in"
+          // subsection by direct measurement (not reconstruction). We only
+          // accumulate on first-attempt clean hits, mirroring char2.
+          this.addBigramWordTime(bigram, tw, timeSinceLastMs);
         }
       }
       if (!isSpace && this.hitRing.length >= 2) {
@@ -170,7 +182,13 @@ export class NgramTracker {
 
   /** POST current deltas to the server and clear the local map. */
   async flush(): Promise<void> {
-    if (this.deltas.size === 0 && this.bigramWordMisses.size === 0) return;
+    if (
+      this.deltas.size === 0 &&
+      this.bigramWordMisses.size === 0 &&
+      this.bigramWordTimes.size === 0
+    ) {
+      return;
+    }
 
     const deltas: NgramBatchDelta[] = [];
     for (const [key, entry] of this.deltas) {
@@ -193,14 +211,28 @@ export class NgramTracker {
       bigramWordMisses.push({ bigram, target_word, typed_word, miss_delta });
     }
 
+    const bigramWordTimes: BigramWordTimeDelta[] = [];
+    for (const [key, entry] of this.bigramWordTimes) {
+      const [bigram, target_word] = key.split('\t');
+      if (bigram === undefined || target_word === undefined) continue;
+      bigramWordTimes.push({
+        bigram,
+        target_word,
+        hits_delta: entry.hits,
+        hit_time_delta_ms: entry.hitTimeMs,
+      });
+    }
+
     this.deltas.clear();
     this.bigramWordMisses.clear();
+    this.bigramWordTimes.clear();
 
     try {
       await postNgramBatch({
         layout_id: this.layoutId,
         deltas,
         bigram_word_misses: bigramWordMisses.length > 0 ? bigramWordMisses : undefined,
+        bigram_word_times: bigramWordTimes.length > 0 ? bigramWordTimes : undefined,
       });
     } catch (err) {
       console.error('NgramTracker: flush failed', err);
@@ -218,12 +250,17 @@ export class NgramTracker {
     return new Map(this.bigramWordMisses);
   }
 
+  /** Expose bigram-word-time buffer for testing. */
+  getPendingBigramWordTimesForTest(): Map<string, BigramWordTimeEntry> {
+    return new Map(this.bigramWordTimes);
+  }
+
   /**
    * Accumulate one attempt for `key`. `timeMs` is added to `hitTimeMs` only
    * when `hit === true`; miss times are discarded so the per-key WPM math
    * isn't skewed by hesitation before errors. Pass `timeMs = 0` for
    * word-level deltas — word slowness is reconstructed from char-level
-   * data via `findSlowWordsWithBigram`.
+   * data.
    */
   private addDelta(key: string, hit: boolean, timeMs: number): void {
     const existing = this.deltas.get(key) ?? { hits: 0, misses: 0, hitTimeMs: 0 };
@@ -231,6 +268,15 @@ export class NgramTracker {
       hits: existing.hits + (hit ? 1 : 0),
       misses: existing.misses + (hit ? 0 : 1),
       hitTimeMs: existing.hitTimeMs + (hit ? timeMs : 0),
+    });
+  }
+
+  private addBigramWordTime(bigram: string, target_word: string, timeMs: number): void {
+    const key = `${bigram}\t${target_word}`;
+    const existing = this.bigramWordTimes.get(key) ?? { hits: 0, hitTimeMs: 0 };
+    this.bigramWordTimes.set(key, {
+      hits: existing.hits + 1,
+      hitTimeMs: existing.hitTimeMs + timeMs,
     });
   }
 

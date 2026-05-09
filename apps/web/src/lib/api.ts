@@ -11,6 +11,7 @@ import type {
   NgramBatchPayload,
   NgramStat,
   BigramWordMiss,
+  BigramWordTime,
   User,
   UserLayoutProgress,
   SetActiveLayoutPayload,
@@ -166,4 +167,17 @@ export function fetchBigramWordMisses(
   const params = new URLSearchParams({ layout_id: String(layoutId) });
   if (bigram) params.set('bigram', bigram);
   return request<BigramWordMiss[]>(`/ngrams/bigram-word-misses?${params.toString()}`);
+}
+
+/**
+ * Per-(bigram, word) hit-time rows. Server returns sorted by mean ms DESC,
+ * so the dashboard can take the head directly for "slow in" lookups.
+ */
+export function fetchBigramWordTimes(
+  layoutId: number,
+  bigram?: string,
+): Promise<BigramWordTime[]> {
+  const params = new URLSearchParams({ layout_id: String(layoutId) });
+  if (bigram) params.set('bigram', bigram);
+  return request<BigramWordTime[]>(`/ngrams/bigram-word-times?${params.toString()}`);
 }

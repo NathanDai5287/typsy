@@ -7,13 +7,13 @@ import {
   fetchSessions,
   fetchNgramStats,
   fetchBigramWordMisses,
+  fetchBigramWordTimes,
 } from '../lib/api.ts';
 import {
   buildErrorHeatmap,
   buildFingerMap,
   buildKeyStats,
   dayStreak,
-  findSlowWordsWithBigram,
   perFingerStats,
   sessionsAsSmoothedSeries,
   sfbRate,
@@ -21,7 +21,12 @@ import {
   topWeakNgrams,
   totalCharsTyped,
 } from '@typsy/shared';
-import type { BigramWordMiss, FingerLabel, KeyPosition } from '@typsy/shared';
+import type {
+  BigramWordMiss,
+  BigramWordTime,
+  FingerLabel,
+  KeyPosition,
+} from '@typsy/shared';
 import KeyboardVisual from '../components/KeyboardVisual.tsx';
 import { FINGER_DISPLAY, FINGER_HEX } from '../lib/finger-colors.ts';
 import {
@@ -105,6 +110,12 @@ export default function DashboardPage(): JSX.Element {
     enabled: !!layoutId,
   });
 
+  const { data: bigramWordTimes } = useQuery({
+    queryKey: ['bigramWordTimes', layoutId],
+    queryFn: () => fetchBigramWordTimes(layoutId!),
+    enabled: !!layoutId,
+  });
+
   const positions = useMemo<KeyPosition[]>(
     () => (activeLayout ? JSON.parse(activeLayout.key_positions_json) : []),
     [activeLayout],
@@ -174,6 +185,17 @@ export default function DashboardPage(): JSX.Element {
     return map;
   }, [bigramWordMisses]);
 
+  // Group bigram-word-times by bigram. Server already sorts by mean ms DESC.
+  const timesByBigram = useMemo(() => {
+    const map = new Map<string, BigramWordTime[]>();
+    for (const row of bigramWordTimes ?? []) {
+      const list = map.get(row.bigram) ?? [];
+      list.push(row);
+      map.set(row.bigram, list);
+    }
+    return map;
+  }, [bigramWordTimes]);
+
   const streak = useMemo(() => dayStreak(dashboardSessions), [dashboardSessions]);
   const totalChars = useMemo(() => totalCharsTyped(dashboardSessions), [dashboardSessions]);
   const lastSession = dashboardSessions[0];
@@ -186,13 +208,7 @@ export default function DashboardPage(): JSX.Element {
   const [hoveredBigram, setHoveredBigram] = useState<string | null>(null);
   const activeBigram = pinnedBigram ?? hoveredBigram;
   const activeMisses = activeBigram ? missesByBigram.get(activeBigram) ?? [] : [];
-  const activeSlowWords = useMemo(
-    () =>
-      activeBigram
-        ? findSlowWordsWithBigram(ngramRows ?? [], activeBigram, 5)
-        : [],
-    [activeBigram, ngramRows],
-  );
+  const activeSlowWords = activeBigram ? timesByBigram.get(activeBigram) ?? [] : [];
 
   if (!userData || !layouts) {
     return (
@@ -602,7 +618,7 @@ function BigramDetailsPanel({
   bigram: string | null;
   pinned: boolean;
   misses: readonly BigramWordMiss[];
-  slowWords: readonly { word: string; wpm: number; hits: number; misses: number }[];
+  slowWords: readonly BigramWordTime[];
 }): JSX.Element {
   return (
     <section className="panel p-4 md:sticky md:top-4 self-start space-y-4">
@@ -665,25 +681,25 @@ function BigramDetailsPanel({
               slow in
             </div>
             {slowWords.length === 0 ? (
-              <p className="text-fg4 text-[11px]">not enough word data yet</p>
+              <p className="text-fg4 text-[11px]">not enough timing data yet</p>
             ) : (
               <table className="w-full text-sm font-mono">
                 <thead className="text-left text-fg4 text-[10px] uppercase tracking-widest">
                   <tr>
                     <th className="py-1 font-normal">word</th>
-                    <th className="py-1 font-normal text-right">wpm</th>
-                    <th className="py-1 font-normal text-right">attempts</th>
+                    <th className="py-1 font-normal text-right">ms</th>
+                    <th className="py-1 font-normal text-right">hits</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {slowWords.map((s) => (
-                    <tr key={s.word} className="border-t border-bg4">
-                      <td className="py-1 text-fg_h">{s.word}</td>
+                  {slowWords.slice(0, 10).map((s) => (
+                    <tr key={s.target_word} className="border-t border-bg4">
+                      <td className="py-1 text-fg_h">{s.target_word}</td>
                       <td className="py-1 text-right tabular-nums text-orange-400">
-                        {s.wpm.toFixed(1)}
+                        {(s.hit_time_ms / s.hits).toFixed(0)}
                       </td>
                       <td className="py-1 text-right tabular-nums text-fg3">
-                        {s.hits + s.misses}
+                        {s.hits}
                       </td>
                     </tr>
                   ))}

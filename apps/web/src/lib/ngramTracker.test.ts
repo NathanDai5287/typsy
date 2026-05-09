@@ -287,4 +287,42 @@ describe('NgramTracker', () => {
     const misses = tracker.getPendingBigramWordMissesForTest();
     expect(misses.size).toBe(0);
   });
+
+  // ─── per-(bigram, word) hit times ────────────────────────────────────────
+
+  it('records bigram-word-time on clean char2 hits inside a known word', () => {
+    tracker.recordChar('c', 'c', 100, 'cram');
+    tracker.recordChar('r', 'r', 200, 'cram'); // clean 'cr' hit, time=200
+    tracker.recordChar('a', 'a',  90, 'cram'); // clean 'ra' hit, time=90
+    tracker.recordChar('m', 'm',  80, 'cram'); // clean 'am' hit, time=80
+
+    const times = tracker.getPendingBigramWordTimesForTest();
+    expect(times.get('cr\tcram')).toEqual({ hits: 1, hitTimeMs: 200 });
+    expect(times.get('ra\tcram')).toEqual({ hits: 1, hitTimeMs: 90 });
+    expect(times.get('am\tcram')).toEqual({ hits: 1, hitTimeMs: 80 });
+  });
+
+  it('does NOT record bigram-word-time on misses', () => {
+    tracker.recordChar('c', 'c', 100, 'cram');
+    tracker.recordChar('x', 'r', 800, 'cram'); // miss
+    tracker.recordChar('r', 'r', 200, 'cram'); // corrective — firstAttempt false, ignored
+    tracker.recordChar('a', 'a',  90, 'cram'); // clean 'ra' from new position
+
+    const times = tracker.getPendingBigramWordTimesForTest();
+    expect(times.has('cr\tcram')).toBe(false);
+    expect(times.get('ra\tcram')).toEqual({ hits: 1, hitTimeMs: 90 });
+  });
+
+  it('accumulates multiple occurrences of the same (bigram, word)', () => {
+    // Word "tatat" has "ta" twice and "at" twice.
+    tracker.recordChar('t', 't', 100, 'tatat');
+    tracker.recordChar('a', 'a', 110, 'tatat'); // ta #1
+    tracker.recordChar('t', 't', 120, 'tatat'); // at #1
+    tracker.recordChar('a', 'a', 130, 'tatat'); // ta #2
+    tracker.recordChar('t', 't', 140, 'tatat'); // at #2
+
+    const times = tracker.getPendingBigramWordTimesForTest();
+    expect(times.get('ta\ttatat')).toEqual({ hits: 2, hitTimeMs: 110 + 130 });
+    expect(times.get('at\ttatat')).toEqual({ hits: 2, hitTimeMs: 120 + 140 });
+  });
 });
