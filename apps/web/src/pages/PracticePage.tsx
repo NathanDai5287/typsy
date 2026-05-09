@@ -584,6 +584,9 @@ export default function PracticePage(): JSX.Element {
         void queryClient.invalidateQueries({
           queryKey: ['bigramWordMisses', activeProgress.layout_id],
         });
+        void queryClient.invalidateQueries({
+          queryKey: ['bigramWordTimes', activeProgress.layout_id],
+        });
         return;
       }
 
@@ -617,6 +620,9 @@ export default function PracticePage(): JSX.Element {
       });
       void queryClient.invalidateQueries({
         queryKey: ['bigramWordMisses', activeProgress.layout_id],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ['bigramWordTimes', activeProgress.layout_id],
       });
     } catch (err) {
       console.error('Failed to save session', err);

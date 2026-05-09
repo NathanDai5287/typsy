@@ -4,7 +4,6 @@ import {
   perFingerStats,
   sfbRate,
   buildErrorHeatmap,
-  findSlowWordsWithBigram,
   topWeakNgrams,
   topSlowNgrams,
   totalCharsTyped,
@@ -255,64 +254,6 @@ describe('sessionsAsSmoothedSeries', () => {
     const series = sessionsAsSmoothedSeries(sessions, { window: 2 });
     expect(series[1].wpm).toBeGreaterThan(99);
     expect(series[1].accuracy).toBeGreaterThan(0.99);
-  });
-});
-
-describe('findSlowWordsWithBigram', () => {
-  // Word time is reconstructed as char1[first] + Σ char2[transitions].
-  // Helper: register the per-char/per-bigram means as ngram_stats rows so the
-  // function can read them. mean = hit_time_ms / hits, so we set hits=1 and
-  // hit_time_ms = the desired mean directly.
-  const charRow = (ng: string, type: 'char1' | 'char2', meanMs: number): NgramStat =>
-    row(ng, type, 1, 0, meanMs);
-
-  it('reconstructs word time from char-level data and ranks slowest first', () => {
-    const rows: NgramStat[] = [
-      // word1 entries (only existence + .ngram matter; hit_time_ms is unused)
-      row('cat', 'word1', 5, 0, 0),
-      row('cab', 'word1', 5, 0, 0),
-      row('hi',  'word1', 5, 0, 0),  // doesn't contain "ca" → skipped
-
-      // char1 firsts
-      charRow('c', 'char1', 100),
-      charRow('h', 'char1', 100),
-
-      // char2 transitions for "cat": ca + at
-      charRow('ca', 'char2', 100), // cat = 100 + 100 + 100 = 300
-      charRow('at', 'char2', 100),
-
-      // char2 for "cab": ca + ab — make ab really slow so cab > cat
-      charRow('ab', 'char2', 500), // cab = 100 + 100 + 500 = 700
-
-      // char2 for "hi"
-      charRow('hi', 'char2', 100),
-    ];
-    const out = findSlowWordsWithBigram(rows, 'ca', 5);
-    expect(out.map((r) => r.word)).toEqual(['cab', 'cat']);
-    expect(out[0].meanMs).toBe(700);
-    expect(out[1].meanMs).toBe(300);
-    // wpm = 12000 * length / total_ms
-    expect(out[0].wpm).toBeCloseTo((12_000 * 3) / 700, 5);
-  });
-
-  it('skips words missing any required char1 or char2 mean', () => {
-    const rows: NgramStat[] = [
-      row('cab', 'word1', 5, 0, 0),
-      // No char1:c → skip
-      charRow('ca', 'char2', 100),
-      charRow('ab', 'char2', 100),
-    ];
-    expect(findSlowWordsWithBigram(rows, 'ca')).toEqual([]);
-  });
-
-  it('respects minAttempts', () => {
-    const rows: NgramStat[] = [
-      row('cat', 'word1', 0, 0, 0), // 0 attempts → skip even at minAttempts=1
-      charRow('c', 'char1', 100),
-      charRow('ca', 'char2', 100),
-      charRow('at', 'char2', 100),
-    ];
-    expect(findSlowWordsWithBigram(rows, 'ca')).toEqual([]);
   });
 });
 
