@@ -145,9 +145,35 @@ export interface NgramBatchDelta {
   time_delta_ms: number;
 }
 
+/**
+ * Per-bigram missed-word context. `typed_word` freezes the target prefix up to
+ * (but not including) the position where the first wrong char fired, with that
+ * first wrong char appended in place of the expected one. e.g. target "cram",
+ * user mistypes the 'r' as 'x' (then maybe 'q','z' before correcting): we
+ * record `(bigram="cr", target_word="cram", typed_word="cx")`.
+ */
+export interface BigramWordMissDelta {
+  bigram: string;
+  target_word: string;
+  typed_word: string;
+  miss_delta: number;
+}
+
 export interface NgramBatchPayload {
   layout_id: number;
   deltas: NgramBatchDelta[];
+  /** Optional per-bigram missed-word context. Server upserts into bigram_word_misses. */
+  bigram_word_misses?: BigramWordMissDelta[];
+}
+
+export interface BigramWordMiss {
+  user_id: number;
+  layout_id: number;
+  bigram: string;
+  target_word: string;
+  typed_word: string;
+  miss_count: number;
+  last_seen_at: string;
 }
 
 // API response shapes

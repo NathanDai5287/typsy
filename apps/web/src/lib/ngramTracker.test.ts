@@ -23,9 +23,8 @@ describe('NgramTracker', () => {
   });
 
   it('records char1 miss against the expected char', () => {
-    tracker.recordChar('x', 't', 100); // typed x, expected t
+    tracker.recordChar('x', 't', 100);
     const pending = tracker.getPendingForTest();
-    // Miss recorded on expected 't', NOT on typed 'x'
     expect(pending.get('char1:t')?.misses).toBe(1);
     expect(pending.has('char1:x')).toBe(false);
   });
@@ -41,10 +40,9 @@ describe('NgramTracker', () => {
   });
 
   it('records char2 miss on the expected bigram, not the typed bigram', () => {
-    tracker.recordChar('t', 't', 100); // correct
-    tracker.recordChar('x', 'h', 80); // wrong — expected 'h', typed 'x'
+    tracker.recordChar('t', 't', 100);
+    tracker.recordChar('x', 'h', 80);
     const pending = tracker.getPendingForTest();
-    // Miss should be on 'th' (expected bigram), not 'tx'
     expect(pending.get('char2:th')?.misses).toBe(1);
     expect(pending.has('char2:tx')).toBe(false);
   });
@@ -114,7 +112,7 @@ describe('NgramTracker', () => {
     tracker.recordChar('f', 'f', 80);
     tracker.recordChar('o', 'o', 80);
     tracker.recordChar('x', 'x', 80);
-    tracker.recordChar('!', 'x', 80); // mistake while still in the word (expected 'x')
+    tracker.recordChar('!', 'x', 80);
     tracker.finalizeWord();
 
     const pending = tracker.getPendingForTest();
@@ -129,10 +127,8 @@ describe('NgramTracker', () => {
     tracker.recordChar('t', 't', 120);
     tracker.recordChar('h', 'h', 80);
     const pending = tracker.getPendingForTest();
-    // char1:t gets 120ms, char1:h gets 80ms
     expect(pending.get('char1:t')?.totalTimeMs).toBe(120);
     expect(pending.get('char1:h')?.totalTimeMs).toBe(80);
-    // char2:th gets 80ms (time of the second keypress)
     expect(pending.get('char2:th')?.totalTimeMs).toBe(80);
   });
 
@@ -147,5 +143,138 @@ describe('NgramTracker', () => {
 
   it('flush is a no-op when deltas are empty', async () => {
     await expect(tracker.flush()).resolves.toBeUndefined();
+  });
+
+  // ─── phantom doubled bigram (the bug this rewrite fixes) ──────────────────
+
+  it('does NOT record phantom doubled bigrams on miss recovery', () => {
+    // Target "apple": user mistypes 'a', then types 'a' correctly. The OLD
+    // behavior recorded "aa" as a slow hit (with huge time-delta from
+    // recovery). The NEW behavior records nothing for the corrective hit and
+    // never produces an "aa" bigram.
+    tracker.recordChar('q', 'a', 100, 'apple'); // miss
+    tracker.recordChar('a', 'a', 800, 'apple'); // corrective hit (huge delay)
+    tracker.recordChar('p', 'p', 90, 'apple');
+    tracker.recordChar('p', 'p', 90, 'apple');
+
+    const pending = tracker.getPendingForTest();
+    expect(pending.has('char2:aa')).toBe(false);
+    expect(pending.has('char3: aa')).toBe(false);
+    expect(pending.get('char2:pp')?.hits).toBe(1);
+  });
+
+  it('does NOT record phantom doubled bigrams when miss is mid-word', () => {
+    // Target "apple": correctly type 'a', mistype the first 'p', recover.
+    // OLD behavior added "pp" hit on the corrective 'p'. NEW: only the real
+    // "pp" bigram (between the two p's of "apple") gets recorded, as a hit.
+    tracker.recordChar('a', 'a', 100, 'apple');
+    tracker.recordChar('q', 'p', 100, 'apple'); // miss
+    tracker.recordChar('p', 'p', 800, 'apple'); // corrective
+    tracker.recordChar('p', 'p', 90, 'apple');  // real second 'p'
+
+    const pending = tracker.getPendingForTest();
+    expect(pending.get('char2:ap')?.misses).toBe(1);
+    expect(pending.get('char2:ap')?.hits).toBe(0);
+    expect(pending.get('char2:pp')?.hits).toBe(1);
+    expect(pending.get('char2:pp')?.misses).toBe(0);
+  });
+
+  // ─── per-position miss cap ───────────────────────────────────────────────
+
+  it('counts at most one miss per position even if user fumbles repeatedly', () => {
+    // Target "cram", user mistypes 'r' four times then corrects.
+    tracker.recordChar('c', 'c', 100, 'cram');
+    tracker.recordChar('x', 'r', 100, 'cram'); // miss 1
+    tracker.recordChar('q', 'r', 50, 'cram');  // miss 2
+    tracker.recordChar('z', 'r', 50, 'cram');  // miss 3
+    tracker.recordChar('y', 'r', 50, 'cram');  // miss 4
+    tracker.recordChar('r', 'r', 50, 'cram');  // corrective hit
+    tracker.recordChar('a', 'a', 90, 'cram');
+    tracker.recordChar('m', 'm', 90, 'cram');
+
+    const pending = tracker.getPendingForTest();
+    expect(pending.get('char1:r')?.misses).toBe(1);
+    expect(pending.get('char1:r')?.hits).toBe(0);
+    expect(pending.get('char2:cr')?.misses).toBe(1);
+    expect(pending.get('char2:cr')?.hits).toBe(0);
+  });
+
+  // ─── first char of word excluded from bigram blame ───────────────────────
+
+  it('does NOT track bigrams for the first char of a word', () => {
+    // Mistype the first char of "cram" — no bigram should be blamed.
+    tracker.recordChar('x', 'c', 100, 'cram'); // miss
+    tracker.recordChar('c', 'c', 500, 'cram');
+    tracker.recordChar('r', 'r', 90, 'cram');
+
+    const pending = tracker.getPendingForTest();
+    expect(pending.get('char1:c')?.misses).toBe(1);
+    // No bigram involving 'c' as the second char should have been recorded
+    // for this miss (there's no preceding letter inside "cram").
+    expect(pending.has('char2:cr')).toBe(true); // 'cr' is recorded on the next clean attempt
+    expect(pending.get('char2:cr')?.hits).toBe(1);
+    expect(pending.get('char2:cr')?.misses).toBe(0);
+    // No space-letter bigram either.
+    for (const k of pending.keys()) {
+      if (k.startsWith('char2:') || k.startsWith('char3:')) {
+        const ng = k.slice(k.indexOf(':') + 1);
+        expect(/\s/.test(ng)).toBe(false);
+      }
+    }
+  });
+
+  it('does NOT cross word boundaries when forming bigrams', () => {
+    // After a word ends the ring resets, so the first char of the next word
+    // forms no bigram with the previous word's last letter.
+    'an'.split('').forEach((c) => tracker.recordChar(c, c, 90));
+    tracker.recordChar(' ', ' ', 90);
+    'apple'.split('').forEach((c) => tracker.recordChar(c, c, 90));
+
+    const pending = tracker.getPendingForTest();
+    expect(pending.has('char2:n ')).toBe(false);
+    expect(pending.has('char2: a')).toBe(false);
+    expect(pending.has('char2:ap')).toBe(true);
+  });
+
+  // ─── per-bigram missed-word context ──────────────────────────────────────
+
+  it('records bigram-word-miss with target and typed-prefix', () => {
+    tracker.recordChar('c', 'c', 100, 'cram');
+    tracker.recordChar('x', 'r', 100, 'cram'); // miss → record ('cr','cram','cx')
+
+    const misses = tracker.getPendingBigramWordMissesForTest();
+    expect(misses.get('cr\tcram\tcx')).toBe(1);
+  });
+
+  it('uses the FIRST wrong char as the typed-word substitution, even when fumbled multiple times', () => {
+    tracker.recordChar('c', 'c', 100, 'cram');
+    tracker.recordChar('x', 'r', 100, 'cram'); // miss 1 (first wrong)
+    tracker.recordChar('q', 'r', 50, 'cram');  // miss 2 — must NOT re-record
+    tracker.recordChar('r', 'r', 50, 'cram');  // corrective
+
+    const misses = tracker.getPendingBigramWordMissesForTest();
+    expect(misses.get('cr\tcram\tcx')).toBe(1);
+    expect(misses.has('cr\tcram\tcq')).toBe(false);
+  });
+
+  it('records different bigram-word-miss rows for different misses in the same word', () => {
+    // Target "apple": miss on 'p' (1st p) gets one row; miss on 'l' gets another.
+    tracker.recordChar('a', 'a', 100, 'apple');
+    tracker.recordChar('q', 'p', 100, 'apple');
+    tracker.recordChar('p', 'p', 50, 'apple');
+    tracker.recordChar('p', 'p', 90, 'apple');
+    tracker.recordChar('z', 'l', 100, 'apple');
+    tracker.recordChar('l', 'l', 50, 'apple');
+    tracker.recordChar('e', 'e', 90, 'apple');
+
+    const misses = tracker.getPendingBigramWordMissesForTest();
+    expect(misses.get('ap\tapple\taq')).toBe(1);
+    expect(misses.get('pl\tapple\tappz')).toBe(1);
+  });
+
+  it('does NOT record bigram-word-miss for a miss on the first char of a word', () => {
+    tracker.recordChar('x', 'c', 100, 'cram');
+    const misses = tracker.getPendingBigramWordMissesForTest();
+    expect(misses.size).toBe(0);
   });
 });

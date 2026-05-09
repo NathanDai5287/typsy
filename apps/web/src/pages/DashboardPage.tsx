@@ -6,13 +6,13 @@ import {
   fetchLayouts,
   fetchSessions,
   fetchNgramStats,
+  fetchBigramWordMisses,
 } from '../lib/api.ts';
 import {
   buildErrorHeatmap,
   buildFingerMap,
   buildKeyStats,
   dayStreak,
-  findWordsWithBigram,
   perFingerStats,
   sessionsAsSmoothedSeries,
   sfbRate,
@@ -20,7 +20,7 @@ import {
   topWeakNgrams,
   totalCharsTyped,
 } from '@typsy/shared';
-import type { FingerLabel, KeyPosition } from '@typsy/shared';
+import type { BigramWordMiss, FingerLabel, KeyPosition } from '@typsy/shared';
 import KeyboardVisual from '../components/KeyboardVisual.tsx';
 import { FINGER_DISPLAY, FINGER_HEX } from '../lib/finger-colors.ts';
 import {
@@ -98,6 +98,12 @@ export default function DashboardPage(): JSX.Element {
     enabled: !!layoutId,
   });
 
+  const { data: bigramWordMisses } = useQuery({
+    queryKey: ['bigramWordMisses', layoutId],
+    queryFn: () => fetchBigramWordMisses(layoutId!),
+    enabled: !!layoutId,
+  });
+
   const positions = useMemo<KeyPosition[]>(
     () => (activeLayout ? JSON.parse(activeLayout.key_positions_json) : []),
     [activeLayout],
@@ -117,14 +123,9 @@ export default function DashboardPage(): JSX.Element {
     [positions, posFingerMap],
   );
 
-  const dashboardSessions = useMemo(
-    () => (sessions ?? []).filter((s) => s.mode !== 'zen'),
-    [sessions],
-  );
-
   const series = useMemo(
-    () => sessionsAsSmoothedSeries(dashboardSessions, { window: 5 }),
-    [dashboardSessions],
+    () => sessionsAsSmoothedSeries(sessions ?? [], { window: 5 }),
+    [sessions],
   );
   const fingerAgg = useMemo(
     () =>
@@ -136,40 +137,45 @@ export default function DashboardPage(): JSX.Element {
   const sfb = useMemo(() => sfbRate(ngramRows ?? [], fingerMap), [ngramRows, fingerMap]);
   const heatmap = useMemo(() => buildErrorHeatmap(ngramRows ?? []), [ngramRows]);
   const keyStats = useMemo(() => buildKeyStats(ngramRows ?? []), [ngramRows]);
+
   const topChars = useMemo(() => {
     const rows = topWeakNgrams(ngramRows ?? [], 'char2', 10);
-    // Exclude whitespace bigrams like "r " which can appear as single chars or empty
-    // in HTML due to whitespace collapsing.
     return rows.filter((r) => r.ngram.length === 2 && !/\s/.test(r.ngram));
   }, [ngramRows]);
 
   const slowChars = useMemo(() => {
     const rows = topSlowNgrams(ngramRows ?? [], 'char2', 10);
-    // Exclude whitespace bigrams like "r " which can appear as single chars or empty
-    // in HTML due to whitespace collapsing.
     return rows.filter((r) => r.ngram.length === 2 && !/\s/.test(r.ngram));
   }, [ngramRows]);
+
   const topWords = useMemo(
     () => topWeakNgrams(ngramRows ?? [], 'word1', 10),
     [ngramRows],
   );
 
-  // Compute word context for slow bigrams (for hover tooltip)
-  const slowBigramWords = useMemo(() => {
-    return slowChars.reduce(
-      (acc, bigram) => {
-        acc[bigram.ngram] = findWordsWithBigram(ngramRows ?? [], bigram.ngram, 5);
-        return acc;
-      },
-      {} as Record<string, Array<{ word: string; hits: number; misses: number; errorRate: number }>>,
-    );
-  }, [slowChars, ngramRows]);
+  // Group bigram-word-misses by bigram for instant selection lookup.
+  const missesByBigram = useMemo(() => {
+    const map = new Map<string, BigramWordMiss[]>();
+    for (const row of bigramWordMisses ?? []) {
+      const list = map.get(row.bigram) ?? [];
+      list.push(row);
+      map.set(row.bigram, list);
+    }
+    return map;
+  }, [bigramWordMisses]);
 
-  const streak = useMemo(() => dayStreak(dashboardSessions), [dashboardSessions]);
-  const totalChars = useMemo(() => totalCharsTyped(dashboardSessions), [dashboardSessions]);
-  const lastSession = dashboardSessions[0];
+  const streak = useMemo(() => dayStreak(sessions ?? []), [sessions]);
+  const totalChars = useMemo(() => totalCharsTyped(sessions ?? []), [sessions]);
+  const lastSession = sessions?.[0];
 
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
+
+  // Bigram-details panel state. `pinned` survives hover; `hovered` is
+  // ephemeral. Active = pinned ?? hovered.
+  const [pinnedBigram, setPinnedBigram] = useState<string | null>(null);
+  const [hoveredBigram, setHoveredBigram] = useState<string | null>(null);
+  const activeBigram = pinnedBigram ?? hoveredBigram;
+  const activeMisses = activeBigram ? missesByBigram.get(activeBigram) ?? [] : [];
 
   if (!userData || !layouts) {
     return (
@@ -180,15 +186,15 @@ export default function DashboardPage(): JSX.Element {
     return <Navigate to="/onboarding" replace />;
   }
 
-  const noData = dashboardSessions.length === 0;
+  const noData = (sessions?.length ?? 0) === 0;
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-5">
       <header>
         <h1 className="text-xl text-fg_h">dashboard</h1>
         <p className="text-fg3 text-sm mt-0.5">
-          {activeLayout.name} · {dashboardSessions.length} session
-          {dashboardSessions.length === 1 ? '' : 's'}
+          {activeLayout.name} · {sessions?.length ?? 0} session
+          {sessions?.length === 1 ? '' : 's'}
         </p>
       </header>
 
@@ -224,7 +230,6 @@ export default function DashboardPage(): JSX.Element {
 
       {!noData && (
         <>
-          {/* WPM trend charts */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <section className="panel p-4">
               <PanelHeading>wpm over time</PanelHeading>
@@ -245,7 +250,7 @@ export default function DashboardPage(): JSX.Element {
                       k === 'wpm' ? [v.toFixed(1), 'WPM'] : [v, k]
                     }
                   />
-                  <Line type="linear" dataKey="wpm" stroke={CHART.wpmLine} strokeWidth={1.5} dot={false} isAnimationActive={false} />
+                  <Line type="linear" dataKey="wpm" stroke={CHART.wpmLine} strokeWidth={1.5} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             </section>
@@ -268,13 +273,12 @@ export default function DashboardPage(): JSX.Element {
                     labelFormatter={(t) => `${Number(t).toLocaleString()} chars`}
                     formatter={(v: number) => [v.toFixed(1), 'WPM']}
                   />
-                  <Line type="linear" dataKey="wpm" stroke={CHART.volumeLine} strokeWidth={1.5} dot={false} isAnimationActive={false} />
+                  <Line type="linear" dataKey="wpm" stroke={CHART.volumeLine} strokeWidth={1.5} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             </section>
           </div>
 
-          {/* Accuracy trend */}
           <section className="panel p-4">
             <PanelHeading>accuracy trend</PanelHeading>
             <ResponsiveContainer width="100%" height={160}>
@@ -303,7 +307,6 @@ export default function DashboardPage(): JSX.Element {
                   stroke={CHART.accLine}
                   strokeWidth={1.5}
                   dot={false}
-                  isAnimationActive={false}
                 />
               </LineChart>
             </ResponsiveContainer>
@@ -352,7 +355,7 @@ export default function DashboardPage(): JSX.Element {
                 );
               }}
             />
-            <Bar dataKey="wpm" isAnimationActive={false}>
+            <Bar dataKey="wpm">
               {fingerAgg.map((f) => (
                 <Cell key={f.finger} fill={FINGER_HEX[f.finger]} />
               ))}
@@ -393,28 +396,75 @@ export default function DashboardPage(): JSX.Element {
         </div>
       </section>
 
-      {/* Top weak / slow ngrams */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <NgramTable
-          title="top 10 weak bigrams"
-          rows={topChars.map((n) => [n.ngram, `${(n.errorRate * 100).toFixed(1)}%`, n.hits + n.misses])}
-          headers={['bigram', 'err', 'attempts']}
-          accentClass="text-red-400"
-        />
-        <NgramTable
-          title="top 10 slow bigrams"
-          rows={slowChars.map((n) => [n.ngram, n.wpm.toFixed(1), n.hits + n.misses])}
-          headers={['bigram', 'wpm', 'attempts']}
-          accentClass="text-orange-400"
-          wordContext={slowBigramWords}
-        />
-        <NgramTable
-          title="top 10 weak words"
-          rows={topWords.map((n) => [n.ngram, `${(n.errorRate * 100).toFixed(1)}%`, n.hits + n.misses])}
-          headers={['word', 'err', 'attempts']}
-          accentClass="text-red-400"
+      {/* Bigrams + details panel (2-col on md+, stacked on mobile) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-4">
+          <BigramTable
+            title="top 10 weak bigrams"
+            rows={topChars.map((n) => ({
+              ngram: n.ngram,
+              metric: `${(n.errorRate * 100).toFixed(1)}%`,
+              attempts: n.hits + n.misses,
+            }))}
+            metricHeader="err"
+            accentClass="text-red-400"
+            activeBigram={activeBigram}
+            pinnedBigram={pinnedBigram}
+            onHover={setHoveredBigram}
+            onClick={(bg) => setPinnedBigram(pinnedBigram === bg ? null : bg)}
+          />
+          <BigramTable
+            title="top 10 slow bigrams"
+            rows={slowChars.map((n) => ({
+              ngram: n.ngram,
+              metric: n.wpm.toFixed(1),
+              attempts: n.hits + n.misses,
+            }))}
+            metricHeader="wpm"
+            accentClass="text-orange-400"
+            activeBigram={activeBigram}
+            pinnedBigram={pinnedBigram}
+            onHover={setHoveredBigram}
+            onClick={(bg) => setPinnedBigram(pinnedBigram === bg ? null : bg)}
+          />
+        </div>
+        <BigramDetailsPanel
+          bigram={activeBigram}
+          pinned={!!pinnedBigram}
+          misses={activeMisses}
         />
       </div>
+
+      {/* Top weak words (full width) */}
+      <section className="panel p-4">
+        <PanelHeading>top 10 weak words</PanelHeading>
+        {topWords.length === 0 ? (
+          <p className="text-fg4 text-sm">Not enough data yet.</p>
+        ) : (
+          <table className="w-full text-sm font-mono">
+            <thead className="text-left text-fg4 text-[10px] uppercase tracking-widest">
+              <tr>
+                <th className="py-1 font-normal">word</th>
+                <th className="py-1 font-normal">err</th>
+                <th className="py-1 font-normal text-right">attempts</th>
+              </tr>
+            </thead>
+            <tbody>
+              {topWords.map((n) => (
+                <tr key={n.ngram} className="border-t border-bg4">
+                  <td className="py-1 text-fg_h">{n.ngram}</td>
+                  <td className="py-1 tabular-nums text-red-400">
+                    {(n.errorRate * 100).toFixed(1)}%
+                  </td>
+                  <td className="py-1 text-right tabular-nums text-fg3">
+                    {n.hits + n.misses}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
 
       {/* Session history */}
       <section className="panel p-4">
@@ -452,20 +502,32 @@ export default function DashboardPage(): JSX.Element {
   );
 }
 
-// ─── ngram table helper ───────────────────────────────────────────────
+// ─── Bigram table (selectable) ────────────────────────────────────────
 
-function NgramTable({
+interface BigramRow {
+  ngram: string;
+  metric: string;
+  attempts: number;
+}
+
+function BigramTable({
   title,
-  headers,
   rows,
+  metricHeader,
   accentClass,
-  wordContext,
+  activeBigram,
+  pinnedBigram,
+  onHover,
+  onClick,
 }: {
   title: string;
-  headers: readonly [string, string, string];
-  rows: readonly (readonly [string, string, number])[];
+  rows: readonly BigramRow[];
+  metricHeader: string;
   accentClass: string;
-  wordContext?: Record<string, Array<{ word: string; hits: number; misses: number; errorRate: number }>>;
+  activeBigram: string | null;
+  pinnedBigram: string | null;
+  onHover: (bg: string | null) => void;
+  onClick: (bg: string) => void;
 }): JSX.Element {
   return (
     <section className="panel p-4">
@@ -473,27 +535,34 @@ function NgramTable({
       {rows.length === 0 ? (
         <p className="text-fg4 text-sm">Not enough data yet.</p>
       ) : (
-        <table className="w-full text-sm font-mono">
+        <table className="w-full text-sm font-mono" onMouseLeave={() => onHover(null)}>
           <thead className="text-left text-fg4 text-[10px] uppercase tracking-widest">
             <tr>
-              <th className="py-1 font-normal">{headers[0]}</th>
-              <th className="py-1 font-normal">{headers[1]}</th>
-              <th className="py-1 font-normal text-right">{headers[2]}</th>
+              <th className="py-1 font-normal">bigram</th>
+              <th className="py-1 font-normal">{metricHeader}</th>
+              <th className="py-1 font-normal text-right">attempts</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map(([k, v, attempts]) => {
-              const words = wordContext?.[k];
-              const hoverText = words?.length
-                ? `missed in: ${words.map((w) => w.word).join(', ')}`
-                : undefined;
+            {rows.map((r) => {
+              const isPinned = pinnedBigram === r.ngram;
+              const isActive = activeBigram === r.ngram;
               return (
-                <tr key={k} className="border-t border-bg4">
+                <tr
+                  key={r.ngram}
+                  className={
+                    'border-t border-bg4 cursor-pointer transition-colors ' +
+                    (isPinned ? 'bg-bg2' : isActive ? 'bg-bg1' : 'hover:bg-bg1')
+                  }
+                  onMouseEnter={() => onHover(r.ngram)}
+                  onClick={() => onClick(r.ngram)}
+                >
                   <td className="py-1 text-fg_h">
-                    <span title={hoverText}>{k}</span>
+                    {r.ngram}
+                    {isPinned && <span className="ml-1.5 text-[10px] text-fg4">●</span>}
                   </td>
-                  <td className={`py-1 tabular-nums ${accentClass}`}>{v}</td>
-                  <td className="py-1 text-right tabular-nums text-fg3">{attempts}</td>
+                  <td className={`py-1 tabular-nums ${accentClass}`}>{r.metric}</td>
+                  <td className="py-1 text-right tabular-nums text-fg3">{r.attempts}</td>
                 </tr>
               );
             })}
@@ -501,6 +570,86 @@ function NgramTable({
         </table>
       )}
     </section>
+  );
+}
+
+// ─── Bigram details panel ────────────────────────────────────────────
+
+function BigramDetailsPanel({
+  bigram,
+  pinned,
+  misses,
+}: {
+  bigram: string | null;
+  pinned: boolean;
+  misses: readonly BigramWordMiss[];
+}): JSX.Element {
+  return (
+    <section className="panel p-4 md:sticky md:top-4 self-start">
+      <PanelHeading>
+        {bigram ? (
+          <>
+            details: <span className="text-fg_h">{bigram}</span>
+            {pinned && (
+              <span className="ml-2 text-[10px] text-fg4 normal-case tracking-normal">pinned</span>
+            )}
+          </>
+        ) : (
+          'bigram details'
+        )}
+      </PanelHeading>
+      {!bigram ? (
+        <p className="text-fg4 text-[11px]">hover a bigram to preview, click to pin</p>
+      ) : misses.length === 0 ? (
+        <p className="text-fg4 text-sm">no missed-word context recorded yet for this bigram</p>
+      ) : (
+        <table className="w-full text-sm font-mono">
+          <thead className="text-left text-fg4 text-[10px] uppercase tracking-widest">
+            <tr>
+              <th className="py-1 font-normal">target</th>
+              <th className="py-1 font-normal">typed</th>
+              <th className="py-1 font-normal text-right">misses</th>
+            </tr>
+          </thead>
+          <tbody>
+            {misses.slice(0, 10).map((m) => (
+              <tr
+                key={`${m.target_word}\t${m.typed_word}`}
+                className="border-t border-bg4"
+              >
+                <td className="py-1">
+                  <DiffWord word={m.target_word} divergeIdx={m.typed_word.length - 1} />
+                </td>
+                <td className="py-1">
+                  <DiffWord word={m.typed_word} divergeIdx={m.typed_word.length - 1} />
+                </td>
+                <td className="py-1 text-right tabular-nums text-red-400">
+                  {m.miss_count}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
+/** Render a word with the char at `divergeIdx` highlighted in red. */
+function DiffWord({ word, divergeIdx }: { word: string; divergeIdx: number }): JSX.Element {
+  const safeIdx = divergeIdx >= 0 && divergeIdx < word.length ? divergeIdx : -1;
+  return (
+    <span className="text-fg2">
+      {[...word].map((ch, i) =>
+        i === safeIdx ? (
+          <span key={i} className="text-red-400 font-bold">
+            {ch}
+          </span>
+        ) : (
+          <span key={i}>{ch}</span>
+        ),
+      )}
+    </span>
   );
 }
 

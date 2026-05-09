@@ -10,6 +10,7 @@ import type {
   Session,
   NgramBatchPayload,
   NgramStat,
+  BigramWordMiss,
   User,
   UserLayoutProgress,
   SetActiveLayoutPayload,
@@ -155,4 +156,14 @@ export function fetchNgramStats(
     ? `/ngrams/stats?layout_id=${layoutId}&type=${type}`
     : `/ngrams/stats?layout_id=${layoutId}`;
   return request<NgramStat[]>(url);
+}
+
+/** Per-bigram missed-word context. Optionally filter to a single bigram. */
+export function fetchBigramWordMisses(
+  layoutId: number,
+  bigram?: string,
+): Promise<BigramWordMiss[]> {
+  const params = new URLSearchParams({ layout_id: String(layoutId) });
+  if (bigram) params.set('bigram', bigram);
+  return request<BigramWordMiss[]>(`/ngrams/bigram-word-misses?${params.toString()}`);
 }
