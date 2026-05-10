@@ -794,6 +794,18 @@ export default function PracticePage(): JSX.Element {
           <span className="text-fg_h">{activeLayout.name}</span>
           <span className="text-fg4 opacity-60">·</span>
           <ModeToggle mode={mode} onChange={changeMode} />
+          {(mode === 'zen' || mode === 'drill') && (
+            <span
+              className="text-[10px] uppercase tracking-widest text-fg4 italic"
+              title={
+                mode === 'zen'
+                  ? 'Zen is freeform typing. Sessions and per-key stats are not recorded.'
+                  : 'Drill is targeted practice. Sessions and per-key stats are not recorded.'
+              }
+            >
+              off the record
+            </span>
+          )}
           <span className="text-fg4 opacity-60">·</span>
           {isMainLayout ? (
             <span className="text-fg3">daily driver</span>
@@ -853,6 +865,12 @@ export default function PracticePage(): JSX.Element {
               </>
             )}
           </div>
+
+          {(lastSummary.mode === 'zen' || lastSummary.mode === 'drill') && (
+            <div className="mt-1.5 text-[10px] uppercase tracking-widest text-fg4 italic">
+              off the record · not on dashboard
+            </div>
+          )}
         </div>
       )}
 
