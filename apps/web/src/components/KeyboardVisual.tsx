@@ -160,9 +160,8 @@ export default function KeyboardVisual({
               <button
                 type="button"
                 className={[
-                  'absolute top-0 right-0 z-20 w-3.5 h-3.5 flex items-center justify-center transition-all',
-                  'border-l border-b border-bg4 rounded-bl-sm',
-                  isPinned ? 'bg-bg_h text-yellow-400 opacity-100' : 'bg-bg0 text-fg4 opacity-0 group-hover:opacity-100 hover:bg-bg_h hover:text-fg_h',
+                  'absolute top-0.5 right-0.5 z-20 w-3 h-3 flex items-center justify-center transition-all',
+                  isPinned ? 'text-yellow-400 scale-110 opacity-100' : 'text-fg4 opacity-0 group-hover:opacity-60 scale-90 hover:scale-100 hover:opacity-100',
                 ].join(' ')}
                 onClick={(e) => {
                   e.stopPropagation();
