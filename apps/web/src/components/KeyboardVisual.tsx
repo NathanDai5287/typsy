@@ -26,6 +26,10 @@ export interface KeyboardVisualProps {
   fadeStrength?: number;
   /** Optional heatmap (char → 0..1 error rate) drawn as a colored ring. */
   heat?: ReadonlyMap<string, number>;
+  /** Set of pinned chars (must be present in Flow mode). */
+  pinned?: ReadonlySet<string>;
+  /** Called when the pin icon is clicked. */
+  onPinClick?: (char: string) => void;
   /**
    * Called when the pointer enters or leaves a key. Passes the char on enter,
    * null on leave. Used by parents to display per-key stats outside the component.
@@ -57,6 +61,8 @@ export default function KeyboardVisual({
   charHits,
   fadeStrength = 1.0,
   heat,
+  pinned,
+  onPinClick,
   onKeyHover,
   compact = false,
   onKeyClick,
@@ -99,6 +105,7 @@ export default function KeyboardVisual({
           {row.map((pos) => {
             const isUnlocked = !unlocked || unlocked.has(pos.char);
             const isNext = nextChar === pos.char;
+            const isPinned = pinned?.has(pos.char);
             const finger = posFingerMap?.[posKey(pos)] ?? pos.finger;
             const fingerBg = FINGER_BG[finger];
             const hits = charHits?.get(pos.char) ?? 0;
@@ -125,7 +132,7 @@ export default function KeyboardVisual({
             const gutterPx = compact ? 6 : 10;
 
             const baseClass = [
-              'relative flex items-center justify-center font-mono font-medium',
+              'group relative flex items-center justify-center font-mono font-medium',
               'border border-bg4',
               isUnlocked ? `${fingerBg} text-bg_h` : 'bg-bg0 text-fg4',
               ringClass,
@@ -149,9 +156,27 @@ export default function KeyboardVisual({
               ? { onMouseEnter: () => onKeyHover(pos.char) }
               : {};
 
+            const pinIcon = onPinClick && isUnlocked && (
+              <button
+                type="button"
+                className={[
+                  'absolute -top-1.5 -right-1.5 z-20 w-4 h-4 rounded-full border border-bg4 bg-bg_h flex items-center justify-center transition-all',
+                  isPinned ? 'text-yellow-400 scale-110 opacity-100' : 'text-fg4 opacity-0 group-hover:opacity-100 scale-90 hover:scale-100',
+                ].join(' ')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onPinClick(pos.char);
+                }}
+                title={isPinned ? `Unpin '${pos.char}'` : `Pin '${pos.char}'`}
+              >
+                <PinIconSvg className="w-2.5 h-2.5" />
+              </button>
+            );
+
             const inner = (
               <>
                 {pos.char}
+                {pinIcon}
                 {isHomeIndex && (
                   <span
                     className={[
@@ -266,4 +291,17 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
     g: parseInt(h.slice(2, 4), 16),
     b: parseInt(h.slice(4, 6), 16),
   };
+}
+
+function PinIconSvg({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className={className}
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path d="M16 9V4H17V2H7V4H8V9L6 12V14H11V22H13V14H18V12L16 9Z" />
+    </svg>
+  );
 }

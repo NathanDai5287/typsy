@@ -471,4 +471,21 @@ describe('generateFlowLine', () => {
     });
     expect(on1).not.toEqual(on2);
   });
+
+  it('restricts words to those containing mustInclude characters', () => {
+    const allowed = new Set(['a', 'b', 'c', 'd', 'e']);
+    const mustInclude = new Set(['a', 'b']);
+    const line = generateFlowLine({
+      allowed,
+      mustInclude,
+      userIndex: indexNgramStats([]),
+      numWords: 10,
+    });
+    const words = line.split(' ');
+    expect(words.length).toBeGreaterThan(0);
+    for (const word of words) {
+      const hasMust = [...word].some((c) => mustInclude.has(c));
+      expect(hasMust).toBe(true);
+    }
+  });
 });
