@@ -175,8 +175,10 @@ export default function KeyboardVisual({
                 <PinIconSvg
                   className="w-2 h-2"
                   fillClassName="fill-yellow-400"
-                  strokeBaseClassName={isPinned ? 'stroke-bg_h/70' : 'stroke-transparent'}
-                  strokeHoverClassName="group-hover/pin:stroke-bg_h group-focus-visible/pin:stroke-bg_h"
+                  strokeClassName={[
+                    isPinned ? 'stroke-bg_h/60' : 'stroke-transparent',
+                    'group-hover/pin:stroke-bg_h/90 group-focus-visible/pin:stroke-bg_h/90',
+                  ].join(' ')}
                 />
               </button>
             );
@@ -304,36 +306,32 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
 function PinIconSvg({
   className,
   fillClassName,
-  strokeBaseClassName,
-  strokeHoverClassName,
+  strokeClassName,
 }: {
   className?: string;
   fillClassName?: string;
-  strokeBaseClassName?: string;
-  strokeHoverClassName?: string;
+  strokeClassName?: string;
 }) {
-  const d = 'M16 9V4H17V2H7V4H8V9L6 12V14H11V22H13V14H18V12L16 9Z';
   return (
-    <svg viewBox="0 0 24 24" className={className} xmlns="http://www.w3.org/2000/svg">
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      xmlns="http://www.w3.org/2000/svg"
+    >
       <path
-        d={d}
+        d="M16 9V4H17V2H7V4H8V9L6 12V14H11V22H13V14H18V12L16 9Z"
         fill="none"
         stroke="currentColor"
-        strokeWidth={2.75}
+        strokeWidth={2.25}
         strokeLinejoin="miter"
         strokeLinecap="square"
-        className={strokeBaseClassName}
+        className={strokeClassName}
       />
       <path
-        d={d}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={3.5}
-        strokeLinejoin="miter"
-        strokeLinecap="square"
-        className={strokeHoverClassName}
+        d="M16 9V4H17V2H7V4H8V9L6 12V14H11V22H13V14H18V12L16 9Z"
+        fill="currentColor"
+        className={fillClassName}
       />
-      <path d={d} fill="currentColor" className={fillClassName} />
     </svg>
   );
 }
