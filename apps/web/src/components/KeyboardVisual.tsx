@@ -160,19 +160,26 @@ export default function KeyboardVisual({
               <button
                 type="button"
                 className={[
-                  'group/pin absolute top-[1px] right-[1px] z-20 w-3 h-3 flex items-center justify-center cursor-pointer rounded-sm',
+                  'group/pin absolute top-[1px] right-[1px] z-20 w-3 h-3 flex items-center justify-center cursor-pointer',
                   'transition-opacity duration-75 focus-visible:outline-none',
-                  isPinned ? 'opacity-100 text-yellow-400 ring-1 ring-bg_h/30' : 'ring-0',
-                  !isPinned && 'opacity-0 text-yellow-400 group-hover:opacity-60 hover:opacity-100 focus-visible:opacity-100',
-                  'hover:ring-1 hover:ring-bg_h/60 focus-visible:ring-1 focus-visible:ring-bg_h/60',
-                ].filter(Boolean).join(' ')}
+                  isPinned
+                    ? 'opacity-100'
+                    : 'opacity-0 group-hover:opacity-60 hover:opacity-100 focus-visible:opacity-100',
+                ].join(' ')}
                 onClick={(e) => {
                   e.stopPropagation();
                   onPinClick(pos.char);
                 }}
                 title={isPinned ? `Unpin '${pos.char}'` : `Pin '${pos.char}'`}
               >
-                <PinIconSvg className="w-2 h-2" />
+                <PinIconSvg
+                  className="w-2 h-2"
+                  fillClassName="fill-yellow-400"
+                  strokeClassName={[
+                    isPinned ? 'stroke-bg_h/60' : 'stroke-transparent',
+                    'group-hover/pin:stroke-bg_h/90 group-focus-visible/pin:stroke-bg_h/90',
+                  ].join(' ')}
+                />
               </button>
             );
 
@@ -296,15 +303,35 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
   };
 }
 
-function PinIconSvg({ className }: { className?: string }) {
+function PinIconSvg({
+  className,
+  fillClassName,
+  strokeClassName,
+}: {
+  className?: string;
+  fillClassName?: string;
+  strokeClassName?: string;
+}) {
   return (
     <svg
       viewBox="0 0 24 24"
-      fill="currentColor"
       className={className}
       xmlns="http://www.w3.org/2000/svg"
     >
-      <path d="M16 9V4H17V2H7V4H8V9L6 12V14H11V22H13V14H18V12L16 9Z" />
+      <path
+        d="M16 9V4H17V2H7V4H8V9L6 12V14H11V22H13V14H18V12L16 9Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2.25}
+        strokeLinejoin="miter"
+        strokeLinecap="square"
+        className={strokeClassName}
+      />
+      <path
+        d="M16 9V4H17V2H7V4H8V9L6 12V14H11V22H13V14H18V12L16 9Z"
+        fill="currentColor"
+        className={fillClassName}
+      />
     </svg>
   );
 }
