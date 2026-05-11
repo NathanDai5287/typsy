@@ -160,8 +160,8 @@ export default function KeyboardVisual({
               <button
                 type="button"
                 className={[
-                  'absolute -top-1.5 -right-1.5 z-20 w-4 h-4 rounded-full border border-bg4 bg-bg_h flex items-center justify-center transition-all',
-                  isPinned ? 'text-yellow-400 scale-110 opacity-100' : 'text-fg4 opacity-0 group-hover:opacity-100 scale-90 hover:scale-100',
+                  'absolute top-0.5 right-0.5 z-20 w-3 h-3 flex items-center justify-center transition-all',
+                  isPinned ? 'text-yellow-400 scale-110 opacity-100' : 'text-fg4 opacity-0 group-hover:opacity-60 scale-90 hover:scale-100 hover:opacity-100',
                 ].join(' ')}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -169,7 +169,7 @@ export default function KeyboardVisual({
                 }}
                 title={isPinned ? `Unpin '${pos.char}'` : `Pin '${pos.char}'`}
               >
-                <PinIconSvg className="w-2.5 h-2.5" />
+                <PinIconSvg className="w-2 h-2" />
               </button>
             );
 
