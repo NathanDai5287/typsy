@@ -160,8 +160,11 @@ export default function KeyboardVisual({
               <button
                 type="button"
                 className={[
-                  'absolute -top-1.5 -right-1.5 z-20 w-4 h-4 rounded-full border border-bg4 bg-bg_h flex items-center justify-center transition-all',
-                  isPinned ? 'text-yellow-400 scale-110 opacity-100' : 'text-fg4 opacity-0 group-hover:opacity-100 scale-90 hover:scale-100',
+                  'group/pin absolute top-0 right-0 z-20 w-3.5 h-3.5 flex items-center justify-center cursor-pointer',
+                  'transition-opacity duration-75 focus-visible:outline-none',
+                  isPinned
+                    ? 'opacity-100 text-yellow-400'
+                    : 'opacity-0 text-yellow-400 group-hover:opacity-60 hover:opacity-100 focus-visible:opacity-100',
                 ].join(' ')}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -169,7 +172,14 @@ export default function KeyboardVisual({
                 }}
                 title={isPinned ? `Unpin '${pos.char}'` : `Pin '${pos.char}'`}
               >
-                <PinIconSvg className="w-2.5 h-2.5" />
+                <span
+                  className={[
+                    'absolute inset-0 rounded-sm border border-bg4 bg-bg_h/70',
+                    'opacity-0 group-hover/pin:opacity-100 group-focus-visible/pin:opacity-100 transition-opacity duration-75',
+                  ].join(' ')}
+                  aria-hidden
+                />
+                <PinIconSvg className="relative w-2.5 h-2.5" />
               </button>
             );
 
