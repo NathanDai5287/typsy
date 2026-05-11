@@ -384,6 +384,10 @@ router.post('/progress', (req, res) => {
     updates.push('unlocked_keys_json = ?');
     params.push(payload.unlocked_keys_json);
   }
+  if (payload.pinned_keys_json !== undefined) {
+    updates.push('pinned_keys_json = ?');
+    params.push(payload.pinned_keys_json);
+  }
   if (payload.current_mode !== undefined) {
     updates.push('current_mode = ?');
     params.push(payload.current_mode);

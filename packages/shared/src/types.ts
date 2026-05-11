@@ -41,6 +41,7 @@ export interface UserLayoutProgress {
   user_id: number;
   layout_id: number;
   unlocked_keys_json: string; // JSON string: string[]
+  pinned_keys_json: string;   // JSON string: string[]
   phase: number;
   current_mode: string;
   last_session_at: string | null;
@@ -106,6 +107,7 @@ export interface InitialSetupPayload {
 export interface ProgressUpdatePayload {
   layout_id: number;
   unlocked_keys_json?: string; // JSON string: string[]
+  pinned_keys_json?: string;   // JSON string: string[]
   current_mode?: string;       // 'drill' | 'flow'
   phase?: number;
   /** Pass true to mark this layout as the user's daily driver (all keys unlocked, no progression). */

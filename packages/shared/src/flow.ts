@@ -5,6 +5,8 @@ import { MIN_NGRAM_SAMPLES } from './constants.js';
 export interface FlowOptions {
   /** Set of allowed lowercase chars (the user's unlocked keys). */
   allowed: ReadonlySet<string>;
+  /** Set of chars that MUST be present in every emitted word. */
+  mustInclude?: ReadonlySet<string>;
   /** Per-user ngram index for weakness scoring. */
   userIndex: NgramIndex;
   /** Number of words to emit (default 50). */
@@ -352,6 +354,7 @@ function softmaxSample<T>(
  */
 export function generateFlowLine({
   allowed,
+  mustInclude,
   userIndex,
   numWords = 50,
   temperature = 0.7,
@@ -373,7 +376,15 @@ export function generateFlowLine({
   const hi = Math.max(lo, maxLength);
   const rf = Math.max(0, Math.min(1, randomFraction));
 
-  const candidates = wordsUsingOnly(allowed, lo);
+  let candidates = wordsUsingOnly(allowed, lo);
+  if (mustInclude && mustInclude.size > 0) {
+    candidates = candidates.filter(({ word }) => {
+      for (const char of word) {
+        if (mustInclude.has(char)) return true;
+      }
+      return false;
+    });
+  }
   if (candidates.length === 0) return '';
 
   const baselineMs = computeUserBaselineMs(

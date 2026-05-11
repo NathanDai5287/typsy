@@ -103,6 +103,7 @@ function buildSentence(
   unlocked: ReadonlySet<string>,
   ngramRows: readonly NgramStat[],
   recent?: ReadonlySet<string>,
+  pinned?: ReadonlySet<string>,
 ): string {
   if (unlocked.size === 0) {
     return 'finish onboarding to start practicing';
@@ -125,6 +126,7 @@ function buildSentence(
   }
   return generateFlowLine({
     allowed: unlocked,
+    mustInclude: pinned,
     userIndex,
     numWords: 50,
     recent,
@@ -185,6 +187,20 @@ export default function PracticePage(): JSX.Element {
     [unlockedKeys],
   );
 
+  const pinnedKeys = useMemo<string[]>(() => {
+    if (!activeProgress) return [];
+    try {
+      return JSON.parse(activeProgress.pinned_keys_json || '[]') as string[];
+    } catch {
+      return [];
+    }
+  }, [activeProgress]);
+
+  const pinnedSet = useMemo<Set<string>>(
+    () => new Set(pinnedKeys),
+    [pinnedKeys],
+  );
+
   const posFingerMap = useMemo<Record<string, FingerLabel>>(() => {
     if (!userData) return {};
     try {
@@ -239,6 +255,11 @@ export default function PracticePage(): JSX.Element {
     [unlockedKeys],
   );
 
+  const pinnedKey = useMemo(
+    () => [...pinnedKeys].sort().join(','),
+    [pinnedKeys],
+  );
+
   // ─── Manual unlock/lock controls ─────────────────────────────────────────
   const layoutAlphaChars = useMemo(
     () => positions.filter((p) => /^[a-z]$/.test(p.char)),
@@ -288,6 +309,25 @@ export default function PracticePage(): JSX.Element {
       }
     },
     [activeProgress, isMainLayout, unlockedKeys, unlockedSet, applyUnlockedChange],
+  );
+
+  const handleTogglePin = useCallback(
+    async (char: string) => {
+      if (!activeProgress) return;
+      const isPinned = pinnedSet.has(char);
+      let next: string[];
+      if (isPinned) {
+        next = pinnedKeys.filter((c) => c !== char);
+      } else {
+        next = [...pinnedKeys, char];
+      }
+      await postProgressUpdate({
+        layout_id: activeProgress.layout_id,
+        pinned_keys_json: JSON.stringify(next),
+      });
+      void queryClient.invalidateQueries({ queryKey: ['user'] });
+    },
+    [activeProgress, pinnedKeys, pinnedSet, queryClient],
   );
 
   // ─── Session state ───────────────────────────────────────────────────────
@@ -343,8 +383,8 @@ export default function PracticePage(): JSX.Element {
   }, []);
 
   const getCacheKey = useCallback((): string => {
-    return `${activeProgress?.layout_id ?? 'none'}|${unlockedKey}|${ngramRows ? 'ready' : 'none'}`;
-  }, [activeProgress?.layout_id, unlockedKey, ngramRows]);
+    return `${activeProgress?.layout_id ?? 'none'}|${unlockedKey}|${pinnedKey}|${ngramRows ? 'ready' : 'none'}`;
+  }, [activeProgress?.layout_id, unlockedKey, pinnedKey, ngramRows]);
 
   const buildCachedSentence = useCallback((m: Mode, recentWords: string[]): { sentence: string; recentFlowWords: string[] } => {
     if (!activeProgress || unlockedSet.size === 0 || (ngramRows == null)) {
@@ -353,15 +393,15 @@ export default function PracticePage(): JSX.Element {
 
     const buf = [...recentWords];
     const recent1 = new Set(buf);
-    const s1 = buildSentence(m, unlockedSet, ngramRows, recent1);
+    const s1 = buildSentence(m, unlockedSet, ngramRows, recent1, pinnedSet);
     if (m !== 'drill') pushRecentWords(buf, s1.split(' '));
 
     const recent2 = new Set(buf);
-    const s2 = buildSentence(m, unlockedSet, ngramRows, recent2);
+    const s2 = buildSentence(m, unlockedSet, ngramRows, recent2, pinnedSet);
     if (m !== 'drill') pushRecentWords(buf, s2.split(' '));
 
     return { sentence: s1 + ' ' + s2, recentFlowWords: buf };
-  }, [activeProgress, unlockedSet, ngramRows, pushRecentWords]);
+  }, [activeProgress, unlockedSet, pinnedSet, ngramRows, pushRecentWords]);
 
   const ensureCachedMode = useCallback((m: Mode): { sentence: string; recentFlowWords: string[] } => {
     const key = getCacheKey();
@@ -449,12 +489,12 @@ export default function PracticePage(): JSX.Element {
     if (!sentence && activeProgress && unlockedSet.size > 0 && ngramRows) {
       resetSession();
     }
-  }, [activeProgress, unlockedKey, ngramRows, sentence, resetSession]);
+  }, [activeProgress, unlockedKey, pinnedKey, ngramRows, sentence, resetSession]);
 
   useEffect(() => {
     if (sentence) resetSession();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [unlockedKey]);
+  }, [unlockedKey, pinnedKey]);
 
   useEffect(() => {
     if (!sentence) return;
@@ -508,12 +548,12 @@ export default function PracticePage(): JSX.Element {
   const appendNextChunk = useCallback(() => {
     if (!ngramRows || unlockedSet.size === 0) return;
     const recent = new Set(recentFlowWordsRef.current);
-    const next = buildSentence(mode, unlockedSet, ngramRows, recent);
+    const next = buildSentence(mode, unlockedSet, ngramRows, recent, pinnedSet);
     if (mode !== 'drill') pushRecentWords(recentFlowWordsRef.current, next.split(' '));
     const more = ' ' + next;
     setSentence((prev) => prev + more);
     setCharData((prev) => [...prev, ...initCharData(more)]);
-  }, [mode, unlockedSet, ngramRows, pushRecentWords]);
+  }, [mode, unlockedSet, pinnedSet, ngramRows, pushRecentWords]);
 
   // ─── End session (flush + persist + reset) ───────────────────────────────
   const endSession = useCallback(async () => {
@@ -923,6 +963,8 @@ export default function PracticePage(): JSX.Element {
             nextChar={nextChar}
             posFingerMap={posFingerMap}
             charHits={charHits}
+            pinned={pinnedSet}
+            onPinClick={handleTogglePin}
             onKeyClick={isMainLayout ? undefined : handleToggleKey}
           />
         </div>
