@@ -144,7 +144,7 @@ export default function KeyboardVisual({
             const isLetter = /^[a-z]$/i.test(pos.char);
             const fillVal = heatFill?.get(pos.char);
             const useHeatBg = heatFill && isLetter && fillVal !== undefined && isUnlocked;
-            const useGrayBg = heatFill && !isLetter && isUnlocked;
+            const useGrayBg = heatFill && (!isLetter || fillVal === undefined) && isUnlocked;
 
             const baseClass = [
               'group relative flex items-center justify-center font-mono font-medium',
