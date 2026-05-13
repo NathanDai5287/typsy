@@ -26,6 +26,12 @@ export interface KeyboardVisualProps {
   fadeStrength?: number;
   /** Optional heatmap (char → 0..1 error rate) drawn as a colored ring. */
   heat?: ReadonlyMap<string, number>;
+  /**
+   * Pre-normalized heatmap (char → 0..1) that colors the key background
+   * directly. 0 = neutral (no issues), 1 = worst (red). When provided,
+   * finger colors are replaced and heat dots are suppressed.
+   */
+  heatFill?: ReadonlyMap<string, number>;
   /** Set of pinned chars (must be present in Flow mode). */
   pinned?: ReadonlySet<string>;
   /** Called when the pin icon is clicked. */
@@ -61,6 +67,7 @@ export default function KeyboardVisual({
   charHits,
   fadeStrength = 1.0,
   heat,
+  heatFill,
   pinned,
   onPinClick,
   onKeyHover,
@@ -131,10 +138,17 @@ export default function KeyboardVisual({
             const needsLeftGutter = pos.col === 4 || pos.col === 6;
             const gutterPx = compact ? 6 : 10;
 
+            // When heatFill is provided, color the key background with the
+            // neutral→red gradient instead of the finger color.
+            const fillVal = heatFill?.get(pos.char);
+            const useHeatBg = heatFill && fillVal !== undefined && isUnlocked;
+
             const baseClass = [
               'group relative flex items-center justify-center font-mono font-medium',
               'border border-bg4',
-              isUnlocked ? `${fingerBg} text-bg_h` : 'bg-bg0 text-fg4',
+              useHeatBg
+                ? 'text-fg_h'
+                : isUnlocked ? `${fingerBg} text-bg_h` : 'bg-bg0 text-fg4',
               ringClass,
             ];
             const interactiveClass = onKeyClick
@@ -144,12 +158,13 @@ export default function KeyboardVisual({
                   'focus-visible:outline-none focus-visible:scale-110 focus-visible:border-yellow-400',
                 ]
               : [];
-            const keyStyle = {
+            const keyStyle: React.CSSProperties = {
               width: `${sizePx}px`,
               height: `${sizePx}px`,
               fontSize: `${fontSize}px`,
               opacity,
               marginLeft: needsLeftGutter ? `${gutterPx}px` : undefined,
+              ...(useHeatBg ? { background: heatFillColor(fillVal) } : {}),
             };
 
             const hoverHandlers = onKeyHover
@@ -200,7 +215,7 @@ export default function KeyboardVisual({
                     }}
                   />
                 )}
-                {heatPct !== undefined && heatPct > 0 && (
+                {!heatFill && heatPct !== undefined && heatPct > 0 && (
                   <span
                     className="absolute -top-[3px] -right-[3px] w-2 h-2 border border-bg_h"
                     style={{ background: heatToColor(heatPct) }}
@@ -272,6 +287,16 @@ export function scaleHeatForDisplay(
   }
   if (max <= 0) return 1;
   return Math.max(1, minWorstDisplay / max);
+}
+
+/**
+ * Map a normalized 0..1 badness score to a neutral→red gradient for
+ * key-background fills. Uses Gruvbox bg5 (#504945) as the neutral tone
+ * and Gruvbox red (#ea6962) as the worst. Linear interpolation (Excel-style).
+ */
+function heatFillColor(t: number): string {
+  const clamped = Math.max(0, Math.min(1, t));
+  return mix('#504945', '#ea6962', clamped);
 }
 
 /** Map an error rate 0..1 to a Gruvbox-tinted green→yellow→red color. */
