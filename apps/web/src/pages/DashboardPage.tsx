@@ -646,7 +646,7 @@ function BigramDetailsPanel({
   slowWords: readonly BigramWordTime[];
 }): JSX.Element {
   return (
-    <section className="panel p-4 md:sticky md:top-12 self-start space-y-4">
+    <section className="panel p-4 md:sticky md:top-[3.75rem] self-start space-y-4">
       <PanelHeading>
         {bigram ? (
           <>
