@@ -138,17 +138,22 @@ export default function KeyboardVisual({
             const needsLeftGutter = pos.col === 4 || pos.col === 6;
             const gutterPx = compact ? 6 : 10;
 
-            // When heatFill is provided, color the key background with the
-            // neutral→red gradient instead of the finger color.
+            // When heatFill is provided, color letter-key backgrounds with
+            // the neutral→red gradient. Non-letter keys (punctuation) get a
+            // muted gray so they don't distract from the heatmap.
+            const isLetter = /^[a-z]$/i.test(pos.char);
             const fillVal = heatFill?.get(pos.char);
-            const useHeatBg = heatFill && fillVal !== undefined && isUnlocked;
+            const useHeatBg = heatFill && isLetter && fillVal !== undefined && isUnlocked;
+            const useGrayBg = heatFill && !isLetter && isUnlocked;
 
             const baseClass = [
               'group relative flex items-center justify-center font-mono font-medium',
               'border border-bg4',
               useHeatBg
                 ? 'text-fg_h'
-                : isUnlocked ? `${fingerBg} text-bg_h` : 'bg-bg0 text-fg4',
+                : useGrayBg
+                  ? 'bg-bg3 text-fg4'
+                  : isUnlocked ? `${fingerBg} text-bg_h` : 'bg-bg0 text-fg4',
               ringClass,
             ];
             const interactiveClass = onKeyClick
