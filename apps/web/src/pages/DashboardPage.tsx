@@ -13,6 +13,7 @@ import {
   buildErrorHeatmap,
   buildFingerMap,
   buildKeyStats,
+  buildNormalizedHeatmap,
   dayStreak,
   perFingerStats,
   sessionsAsSmoothedSeries,
@@ -201,6 +202,11 @@ export default function DashboardPage(): JSX.Element {
   const lastSession = dashboardSessions[0];
 
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
+  const [heatMode, setHeatMode] = useState<'wpm' | 'accuracy'>('wpm');
+  const normalizedHeat = useMemo(
+    () => buildNormalizedHeatmap(keyStats, heatMode),
+    [keyStats, heatMode],
+  );
 
   // Bigram-details panel state. `pinned` survives hover; `hovered` is
   // ephemeral. Active = pinned ?? hovered.
@@ -399,16 +405,35 @@ export default function DashboardPage(): JSX.Element {
 
       {/* Layout heatmap */}
       <section className="panel p-4">
-        <PanelHeading>weakness heatmap</PanelHeading>
-        <p className="text-[11px] text-fg4 mb-3">
-          dot color is each key's smoothed error rate, scaled so your worst
-          key always shows some red (deep red when it's clearly an outlier)
-        </p>
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <PanelHeading>weakness heatmap</PanelHeading>
+            <p className="text-[11px] text-fg4 mt-1">
+              key color shows relative {heatMode === 'wpm' ? 'speed' : 'accuracy'} —
+              red is your weakest
+            </p>
+          </div>
+          <div className="flex items-center gap-2 text-[11px] font-mono">
+            <span className={heatMode === 'wpm' ? 'text-fg_h' : 'text-fg4'}>wpm</span>
+            <button
+              type="button"
+              className="relative w-8 h-4 rounded-full bg-bg4 transition-colors cursor-pointer"
+              onClick={() => setHeatMode((m) => (m === 'wpm' ? 'accuracy' : 'wpm'))}
+              aria-label={`Switch to ${heatMode === 'wpm' ? 'accuracy' : 'wpm'} mode`}
+            >
+              <span
+                className="absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-fg_h transition-transform duration-150"
+                style={{ transform: heatMode === 'accuracy' ? 'translateX(16px)' : 'none' }}
+              />
+            </button>
+            <span className={heatMode === 'accuracy' ? 'text-fg_h' : 'text-fg4'}>acc</span>
+          </div>
+        </div>
         <div className="flex items-center gap-8">
           <KeyboardVisual
             positions={positions}
             posFingerMap={posFingerMap}
-            heat={heatmap}
+            heatFill={normalizedHeat}
             onKeyHover={setHoveredKey}
           />
           <div className="font-mono min-w-[120px]">

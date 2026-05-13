@@ -154,6 +154,41 @@ export function buildKeyStats(ngramRows: readonly NgramStat[]): Map<string, KeyS
   return map;
 }
 
+/**
+ * Build a 0..1 heatmap from per-key stats using Excel-style min-max
+ * normalization. 0 = best key (neutral), 1 = worst key (reddest).
+ *
+ * For WPM mode: slowest key → 1, fastest → 0.
+ * For accuracy mode: least accurate key → 1, most accurate → 0.
+ */
+export function buildNormalizedHeatmap(
+  keyStats: ReadonlyMap<string, KeyStat>,
+  mode: 'wpm' | 'accuracy',
+): Map<string, number> {
+  if (keyStats.size === 0) return new Map();
+
+  const entries: [string, number][] = [];
+  for (const [char, stat] of keyStats) {
+    entries.push([char, mode === 'wpm' ? stat.wpm : stat.accuracy]);
+  }
+
+  let min = Infinity;
+  let max = -Infinity;
+  for (const [, v] of entries) {
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+
+  const range = max - min;
+  const map = new Map<string, number>();
+  for (const [char, v] of entries) {
+    // Invert: lower value (slower / less accurate) → higher heat (redder)
+    const t = range > 0 ? (max - v) / range : 0;
+    map.set(char, t);
+  }
+  return map;
+}
+
 // ─── Top weak ngrams ───────────────────────────────────────────────────────
 
 export interface WeakNgram {
