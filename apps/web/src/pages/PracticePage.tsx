@@ -389,6 +389,8 @@ export default function PracticePage(): JSX.Element {
   );
 
   const [bigramOverlayOpen, setBigramOverlayOpen] = useState(false);
+  const bigramOverlayOpenRef = useRef(bigramOverlayOpen);
+  bigramOverlayOpenRef.current = bigramOverlayOpen;
 
   // ─── Session state ───────────────────────────────────────────────────────
   const [sentence, setSentence] = useState('');
@@ -572,6 +574,9 @@ export default function PracticePage(): JSX.Element {
 
   useEffect(() => {
     registerNavbarEscapeGuard(() => {
+      // Pinned-bigrams overlay owns Esc while it's open — block navbar
+      // focus so the keystroke only closes the overlay.
+      if (bigramOverlayOpenRef.current) return false;
       const sessionStarted =
         startTimeRef.current !== null ||
         totalKeystrokesRef.current > 0 ||
@@ -1054,8 +1059,8 @@ export default function PracticePage(): JSX.Element {
 
       {/* Hint line */}
       <p className="mt-6 text-xs text-fg4">
-        type freely · <kbd className="kbd">Esc</kbd> end · <kbd className="kbd">Tab</kbd> mode ·{' '}
-        <kbd className="kbd">\</kbd> keyboard · <kbd className="kbd">+</kbd>/<kbd className="kbd">−</kbd> unlock · <kbd className="kbd">A</kbd> all ·{' '}
+        <kbd className="kbd">Esc</kbd> end · <kbd className="kbd">Tab</kbd> mode ·{' '}
+        <kbd className="kbd">\</kbd> keyboard · <kbd className="kbd">+</kbd>/<kbd className="kbd">−</kbd> unlock · <kbd className="kbd">Shift+A</kbd> all ·{' '}
         <kbd className="kbd">Ctrl+B</kbd> pin bigrams · <kbd className="kbd">?</kbd> help
       </p>
 
