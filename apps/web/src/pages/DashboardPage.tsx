@@ -8,6 +8,7 @@ import {
   fetchNgramStats,
   fetchBigramWordMisses,
   fetchBigramWordTimes,
+  fetchWordTimes,
 } from '../lib/api.ts';
 import {
   buildErrorHeatmap,
@@ -27,6 +28,7 @@ import type {
   BigramWordTime,
   FingerLabel,
   KeyPosition,
+  WordTime,
 } from '@typsy/shared';
 import KeyboardVisual from '../components/KeyboardVisual.tsx';
 import { FINGER_DISPLAY, FINGER_HEX } from '../lib/finger-colors.ts';
@@ -117,6 +119,12 @@ export default function DashboardPage(): JSX.Element {
     enabled: !!layoutId,
   });
 
+  const { data: wordTimes } = useQuery({
+    queryKey: ['wordTimes', layoutId],
+    queryFn: () => fetchWordTimes(layoutId!),
+    enabled: !!layoutId,
+  });
+
   const positions = useMemo<KeyPosition[]>(
     () => (activeLayout ? JSON.parse(activeLayout.key_positions_json) : []),
     [activeLayout],
@@ -173,6 +181,14 @@ export default function DashboardPage(): JSX.Element {
   const topWords = useMemo(
     () => topWeakNgrams(ngramRows ?? [], 'word1', 10),
     [ngramRows],
+  );
+
+  // Server returns word_times pre-sorted by mean ms DESC. Drop one-shot
+  // outliers (a single 900 ms attempt would otherwise dominate) and slice the
+  // head.
+  const topSlowestWords = useMemo<WordTime[]>(
+    () => (wordTimes ?? []).filter((w) => w.hits >= 5).slice(0, 10),
+    [wordTimes],
   );
 
   // Group bigram-word-misses by bigram for instant selection lookup.
@@ -517,6 +533,37 @@ export default function DashboardPage(): JSX.Element {
                   </td>
                   <td className="py-1 text-right tabular-nums text-fg3">
                     {n.hits + n.misses}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      {/* Top slowest words (full width) */}
+      <section className="panel p-4">
+        <PanelHeading>top 10 slowest words</PanelHeading>
+        {topSlowestWords.length === 0 ? (
+          <p className="text-fg4 text-sm">Not enough timing data yet.</p>
+        ) : (
+          <table className="w-full text-sm font-mono">
+            <thead className="text-left text-fg4 text-[10px] uppercase tracking-widest">
+              <tr>
+                <th className="py-1 font-normal">word</th>
+                <th className="py-1 font-normal text-right">ms</th>
+                <th className="py-1 font-normal text-right">attempts</th>
+              </tr>
+            </thead>
+            <tbody>
+              {topSlowestWords.map((w) => (
+                <tr key={w.word} className="border-t border-bg4">
+                  <td className="py-1 text-fg_h">{w.word}</td>
+                  <td className="py-1 text-right tabular-nums text-orange-400">
+                    {(w.hit_time_ms / w.hits).toFixed(0)}
+                  </td>
+                  <td className="py-1 text-right tabular-nums text-fg3">
+                    {w.hits}
                   </td>
                 </tr>
               ))}
