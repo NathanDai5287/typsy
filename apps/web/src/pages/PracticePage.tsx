@@ -294,6 +294,13 @@ export default function PracticePage(): JSX.Element {
     await applyUnlockedChange(unlockedKeys.slice(0, -1));
   }, [activeProgress, isMainLayout, unlockedKeys, applyUnlockedChange]);
 
+  const handleUnlockAll = useCallback(async () => {
+    if (!activeProgress || isMainLayout) return;
+    const all = layoutAlphaChars.map((p) => p.char);
+    if (all.length === unlockedKeys.length) return; // already fully unlocked
+    await applyUnlockedChange(all);
+  }, [activeProgress, isMainLayout, layoutAlphaChars, unlockedKeys, applyUnlockedChange]);
+
   const handleToggleKey = useCallback(
     async (char: string) => {
       if (!activeProgress || isMainLayout) return;
@@ -716,8 +723,15 @@ export default function PracticePage(): JSX.Element {
         description: 'Lock most recently unlocked key',
         handler: () => void handleLockLast(),
       },
+      {
+        id: 'practice.unlock-all',
+        code: 'KeyA',
+        modifiers: new Set<Modifier>(['shift']),
+        description: 'Unlock all keys',
+        handler: () => void handleUnlockAll(),
+      },
     ],
-    [endSession, changeMode, mode, handleUnlockNext, handleLockLast],
+    [endSession, changeMode, mode, handleUnlockNext, handleLockLast, handleUnlockAll],
   );
   useRegisterPageKeymap('Practice', pageBindings);
 
@@ -855,6 +869,7 @@ export default function PracticePage(): JSX.Element {
               totalAlpha={totalAlpha}
               onUnlockNext={handleUnlockNext}
               onLockLast={handleLockLast}
+              onUnlockAll={handleUnlockAll}
             />
           )}
         </div>
@@ -973,7 +988,7 @@ export default function PracticePage(): JSX.Element {
       {/* Hint line */}
       <p className="mt-6 text-xs text-fg4">
         type freely · <kbd className="kbd">Esc</kbd> end · <kbd className="kbd">Tab</kbd> mode ·{' '}
-        <kbd className="kbd">\</kbd> keyboard · <kbd className="kbd">+</kbd>/<kbd className="kbd">−</kbd> unlock ·{' '}
+        <kbd className="kbd">\</kbd> keyboard · <kbd className="kbd">+</kbd>/<kbd className="kbd">−</kbd> unlock · <kbd className="kbd">A</kbd> all ·{' '}
         <kbd className="kbd">?</kbd> help
       </p>
     </div>
@@ -1025,6 +1040,7 @@ interface UnlockControlsProps {
   totalAlpha: number;
   onUnlockNext: () => void;
   onLockLast: () => void;
+  onUnlockAll: () => void;
 }
 
 function UnlockControls({
@@ -1032,6 +1048,7 @@ function UnlockControls({
   totalAlpha,
   onUnlockNext,
   onLockLast,
+  onUnlockAll,
 }: UnlockControlsProps) {
   const canUnlockMore = unlockedCount < totalAlpha;
   const canLockBack = unlockedCount > 1;
@@ -1070,6 +1087,21 @@ function UnlockControls({
         ].join(' ')}
       >
         +
+      </button>
+
+      <button
+        type="button"
+        title="Unlock all keys (Shift+A)"
+        onClick={onUnlockAll}
+        disabled={!canUnlockMore}
+        className={[
+          'px-1 h-5 flex items-center justify-center border font-mono text-xs leading-none focus-visible:outline-none focus-visible:border-yellow-400',
+          canUnlockMore
+            ? 'border-bg4 text-fg2 hover:text-fg_h hover:border-fg4 cursor-pointer'
+            : 'border-bg3 text-fg4 opacity-40 cursor-not-allowed',
+        ].join(' ')}
+      >
+        all
       </button>
     </span>
   );
