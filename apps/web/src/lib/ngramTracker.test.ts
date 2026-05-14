@@ -325,4 +325,74 @@ describe('NgramTracker', () => {
     expect(times.get('ta\ttatat')).toEqual({ hits: 2, hitTimeMs: 110 + 130 });
     expect(times.get('at\ttatat')).toEqual({ hits: 2, hitTimeMs: 120 + 140 });
   });
+
+  // ─── per-word total time ─────────────────────────────────────────────────
+
+  describe('word_times', () => {
+    // Helper: type "<word> " with one ms-per-char value for every keypress.
+    function typeWord(t: NgramTracker, word: string, ms: number): void {
+      for (const c of word) t.recordChar(c, c, ms, word);
+      t.recordChar(' ', ' ', ms, word);
+    }
+
+    it('records intra-word time on the SECOND completed word (first word is skipped)', () => {
+      typeWord(tracker, 'foo', 100); // first word of session — skipped
+      typeWord(tracker, 'bar', 100); // recorded
+      const wt = tracker.getPendingWordTimesForTest();
+      expect(wt.has('foo')).toBe(false);
+      // 'bar' = 3 chars, intra-word intervals = 2 (chars 2..3), each 100ms.
+      expect(wt.get('bar')).toEqual({ hits: 1, hitTimeMs: 200 });
+    });
+
+    it('excludes the first hit of each word (pre-first-hit time is inter-word gap)', () => {
+      // Prime the session so 'word' is no longer the first word.
+      typeWord(tracker, 'a', 50);
+
+      tracker.recordChar('w', 'w', 999, 'word'); // first hit — its 999 must NOT count
+      tracker.recordChar('o', 'o', 100, 'word');
+      tracker.recordChar('r', 'r', 100, 'word');
+      tracker.recordChar('d', 'd', 100, 'word');
+      tracker.recordChar(' ', ' ',  50, 'word'); // trailing space — also excluded
+
+      const wt = tracker.getPendingWordTimesForTest();
+      expect(wt.get('word')).toEqual({ hits: 1, hitTimeMs: 300 });
+    });
+
+    it('includes time spent on mid-word errors (errors slow the word, which is the point)', () => {
+      typeWord(tracker, 'a', 50); // prime past the first-word skip
+
+      tracker.recordChar('c', 'c', 100, 'cat'); // first hit — excluded
+      tracker.recordChar('x', 'a', 400, 'cat'); // miss inside word — time counts
+      tracker.recordChar('a', 'a',  90, 'cat'); // corrective — time counts
+      tracker.recordChar('t', 't', 100, 'cat'); // final hit — time counts
+      tracker.recordChar(' ', ' ',  50, 'cat');
+
+      const wt = tracker.getPendingWordTimesForTest();
+      // 400 (mid-word miss) + 90 (corrective) + 100 (final hit) = 590
+      expect(wt.get('cat')).toEqual({ hits: 1, hitTimeMs: 590 });
+    });
+
+    it('does NOT record the trailing word at session end (finalizeWord skips addWordTime)', () => {
+      typeWord(tracker, 'one', 100); // first word — skipped anyway
+      typeWord(tracker, 'two', 100); // recorded
+
+      // Now start a third word and end the session mid-word.
+      tracker.recordChar('t', 't', 100, 'three');
+      tracker.recordChar('h', 'h', 100, 'three');
+      tracker.recordChar('r', 'r', 100, 'three');
+      tracker.finalizeWord();
+
+      const wt = tracker.getPendingWordTimesForTest();
+      expect(wt.has('three')).toBe(false);
+      expect(wt.get('two')?.hits).toBe(1);
+    });
+
+    it('accumulates across repeated attempts of the same word', () => {
+      typeWord(tracker, 'a', 50); // prime
+      typeWord(tracker, 'go', 100); // first attempt: 100ms (1 intra-word interval)
+      typeWord(tracker, 'go', 150); // second attempt: 150ms
+      const wt = tracker.getPendingWordTimesForTest();
+      expect(wt.get('go')).toEqual({ hits: 2, hitTimeMs: 250 });
+    });
+  });
 });

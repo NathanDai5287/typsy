@@ -12,6 +12,7 @@ import type {
   NgramStat,
   BigramWordMiss,
   BigramWordTime,
+  WordTime,
   User,
   UserLayoutProgress,
   SetActiveLayoutPayload,
@@ -180,4 +181,12 @@ export function fetchBigramWordTimes(
   const params = new URLSearchParams({ layout_id: String(layoutId) });
   if (bigram) params.set('bigram', bigram);
   return request<BigramWordTime[]>(`/ngrams/bigram-word-times?${params.toString()}`);
+}
+
+/**
+ * Per-word total typing-time rows. Server returns sorted by mean ms DESC, so
+ * the dashboard's "top 10 slowest words" table can take the head directly.
+ */
+export function fetchWordTimes(layoutId: number): Promise<WordTime[]> {
+  return request<WordTime[]>(`/ngrams/word-times?layout_id=${layoutId}`);
 }

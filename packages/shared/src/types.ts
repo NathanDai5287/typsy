@@ -184,6 +184,22 @@ export interface BigramWordTimeDelta {
   hit_time_delta_ms: number;
 }
 
+/**
+ * Per-word typing-time delta. One entry per word completed within the batch
+ * window, accumulating total intra-word time (including time spent on errors
+ * and corrections inside the word). The server upserts into `word_times.hits`
+ * and `.hit_time_ms`. Mean = hit_time_ms / hits drives the dashboard's
+ * "top 10 slowest words" table.
+ *
+ * Excludes the first word of the session (unrepresentative reading time) and
+ * the trailing word at session end (cut off / wound down).
+ */
+export interface WordTimeDelta {
+  word: string;
+  hits_delta: number;
+  hit_time_delta_ms: number;
+}
+
 export interface NgramBatchPayload {
   layout_id: number;
   deltas: NgramBatchDelta[];
@@ -191,6 +207,8 @@ export interface NgramBatchPayload {
   bigram_word_misses?: BigramWordMissDelta[];
   /** Optional per-(bigram, word) hit-time deltas. Server upserts into bigram_word_times. */
   bigram_word_times?: BigramWordTimeDelta[];
+  /** Optional per-word total typing-time deltas. Server upserts into word_times. */
+  word_times?: WordTimeDelta[];
 }
 
 export interface BigramWordMiss {
@@ -208,6 +226,15 @@ export interface BigramWordTime {
   layout_id: number;
   bigram: string;
   target_word: string;
+  hits: number;
+  hit_time_ms: number;
+  last_seen_at: string;
+}
+
+export interface WordTime {
+  user_id: number;
+  layout_id: number;
+  word: string;
   hits: number;
   hit_time_ms: number;
   last_seen_at: string;

@@ -3,11 +3,13 @@ import type {
   BigramWordMissDelta,
   BigramWordTimeDelta,
   NgramBatchDelta,
+  WordTimeDelta,
 } from '@typsy/shared';
 import { postNgramBatch } from './api.ts';
 
 type DeltaEntry = { hits: number; misses: number; hitTimeMs: number };
 type BigramWordTimeEntry = { hits: number; hitTimeMs: number };
+type WordTimeEntry = { hits: number; hitTimeMs: number };
 
 /**
  * Tracks per-keystroke ngram stats and per-bigram missed-word context.
@@ -41,6 +43,12 @@ export class NgramTracker {
   private bigramWordMisses = new Map<string, number>();
   /** Buffer for per-(bigram, word) hit-time rows. Key: `${bigram}\t${target}`. */
   private bigramWordTimes = new Map<string, BigramWordTimeEntry>();
+  /** Buffer for per-word total-time rows. Key: word. */
+  private wordTimes = new Map<string, WordTimeEntry>();
+  /** Accumulated intra-word time for the word currently being typed. */
+  private currentWordTimeMs = 0;
+  /** False until the first word of the session has been finalized; gates the first-word-of-session exclusion. */
+  private hasRecordedAnyWord = false;
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private readonly userId: number;
   private readonly layoutId: number;
@@ -68,6 +76,15 @@ export class NgramTracker {
     const hit = typedChar === expectedChar;
     const isSpace = expectedChar === ' ';
     const firstAttempt = !this.currentPosHadMiss;
+
+    // Per-word time: accumulate the inter-keypress interval for every
+    // non-space keypress (hit or miss) that occurs *after* the first hit of
+    // the word. While currentWord === '', the interval is the inter-word gap
+    // (or pre-first-hit fumbling) and is excluded. Errors INSIDE the word
+    // contribute — they slow the word down, which is part of what we measure.
+    if (!isSpace && this.currentWord !== '') {
+      this.currentWordTimeMs += timeSinceLastMs;
+    }
 
     // Stash the target word on the first call at this position (so a later
     // bigram-word-miss has it even though the caller passes it on every call).
@@ -117,14 +134,21 @@ export class NgramTracker {
         if (this.currentWord) {
           const wordHit = !this.currentWordHadError;
           // Word-level deltas carry hits/misses only; no timing. Word
-          // slowness is reconstructed from char-level data.
+          // slowness is recorded separately in wordTimes (see below).
           this.addDelta(`word1:${this.currentWord}`, wordHit, 0);
           if (this.prevWord) {
             this.addDelta(`word2:${this.prevWord} ${this.currentWord}`, wordHit, 0);
           }
+          // Per-word total time. Skip the very first completed word of the
+          // session — its time reflects reading/orienting, not typing speed.
+          if (this.hasRecordedAnyWord && this.currentWordTimeMs > 0) {
+            this.addWordTime(this.currentWord, this.currentWordTimeMs);
+          }
+          this.hasRecordedAnyWord = true;
           this.prevWord = this.currentWord;
           this.currentWord = '';
           this.currentWordHadError = false;
+          this.currentWordTimeMs = 0;
         }
         this.currentTargetWord = '';
         this.hitRing = [];
@@ -154,10 +178,13 @@ export class NgramTracker {
       if (this.prevWord) {
         this.addDelta(`word2:${this.prevWord} ${this.currentWord}`, wordHit, 0);
       }
+      // Deliberately do NOT addWordTime here: the trailing word at session end
+      // is cut off / wound down and not representative of typing speed.
       this.prevWord = this.currentWord;
       this.currentWord = '';
       this.currentTargetWord = '';
       this.currentWordHadError = false;
+      this.currentWordTimeMs = 0;
       this.hitRing = [];
       this.currentPosHadMiss = false;
     }
@@ -185,7 +212,8 @@ export class NgramTracker {
     if (
       this.deltas.size === 0 &&
       this.bigramWordMisses.size === 0 &&
-      this.bigramWordTimes.size === 0
+      this.bigramWordTimes.size === 0 &&
+      this.wordTimes.size === 0
     ) {
       return;
     }
@@ -223,9 +251,19 @@ export class NgramTracker {
       });
     }
 
+    const wordTimes: WordTimeDelta[] = [];
+    for (const [word, entry] of this.wordTimes) {
+      wordTimes.push({
+        word,
+        hits_delta: entry.hits,
+        hit_time_delta_ms: entry.hitTimeMs,
+      });
+    }
+
     this.deltas.clear();
     this.bigramWordMisses.clear();
     this.bigramWordTimes.clear();
+    this.wordTimes.clear();
 
     try {
       await postNgramBatch({
@@ -233,6 +271,7 @@ export class NgramTracker {
         deltas,
         bigram_word_misses: bigramWordMisses.length > 0 ? bigramWordMisses : undefined,
         bigram_word_times: bigramWordTimes.length > 0 ? bigramWordTimes : undefined,
+        word_times: wordTimes.length > 0 ? wordTimes : undefined,
       });
     } catch (err) {
       console.error('NgramTracker: flush failed', err);
@@ -255,6 +294,11 @@ export class NgramTracker {
     return new Map(this.bigramWordTimes);
   }
 
+  /** Expose word-time buffer for testing. */
+  getPendingWordTimesForTest(): Map<string, WordTimeEntry> {
+    return new Map(this.wordTimes);
+  }
+
   /**
    * Accumulate one attempt for `key`. `timeMs` is added to `hitTimeMs` only
    * when `hit === true`; miss times are discarded so the per-key WPM math
@@ -275,6 +319,14 @@ export class NgramTracker {
     const key = `${bigram}\t${target_word}`;
     const existing = this.bigramWordTimes.get(key) ?? { hits: 0, hitTimeMs: 0 };
     this.bigramWordTimes.set(key, {
+      hits: existing.hits + 1,
+      hitTimeMs: existing.hitTimeMs + timeMs,
+    });
+  }
+
+  private addWordTime(word: string, timeMs: number): void {
+    const existing = this.wordTimes.get(word) ?? { hits: 0, hitTimeMs: 0 };
+    this.wordTimes.set(word, {
       hits: existing.hits + 1,
       hitTimeMs: existing.hitTimeMs + timeMs,
     });
