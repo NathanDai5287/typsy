@@ -388,6 +388,10 @@ router.post('/progress', (req, res) => {
     updates.push('pinned_keys_json = ?');
     params.push(payload.pinned_keys_json);
   }
+  if (payload.pinned_bigrams_json !== undefined) {
+    updates.push('pinned_bigrams_json = ?');
+    params.push(payload.pinned_bigrams_json);
+  }
   if (payload.current_mode !== undefined) {
     updates.push('current_mode = ?');
     params.push(payload.current_mode);

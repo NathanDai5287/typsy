@@ -488,4 +488,44 @@ describe('generateFlowLine', () => {
       expect(hasMust).toBe(true);
     }
   });
+
+  it('restricts words to those containing a mustIncludeBigrams substring', () => {
+    const allowed = new Set('abcdefghijklmnopqrstuvwxyz'.split(''));
+    const mustIncludeBigrams = new Set(['sh', 'th']);
+    const line = generateFlowLine({
+      allowed,
+      mustIncludeBigrams,
+      userIndex: indexNgramStats([]),
+      numWords: 30,
+    });
+    const words = line.split(' ');
+    expect(words.length).toBeGreaterThan(0);
+    for (const word of words) {
+      const hasBigram = word.includes('sh') || word.includes('th');
+      expect(hasBigram).toBe(true);
+    }
+  });
+
+  it('composes mustInclude chars and mustIncludeBigrams via OR', () => {
+    // A word qualifies if it contains a pinned char OR a pinned bigram.
+    // With `q` pinned and `sh` pinned, every emitted word should satisfy
+    // at least one of the two.
+    const allowed = new Set('abcdefghijklmnopqrstuvwxyz'.split(''));
+    const mustInclude = new Set(['q']);
+    const mustIncludeBigrams = new Set(['sh']);
+    const line = generateFlowLine({
+      allowed,
+      mustInclude,
+      mustIncludeBigrams,
+      userIndex: indexNgramStats([]),
+      numWords: 30,
+    });
+    const words = line.split(' ');
+    expect(words.length).toBeGreaterThan(0);
+    for (const word of words) {
+      const hasChar = word.includes('q');
+      const hasBigram = word.includes('sh');
+      expect(hasChar || hasBigram).toBe(true);
+    }
+  });
 });

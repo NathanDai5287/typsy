@@ -22,6 +22,8 @@ import {
 } from '@typsy/shared';
 import type { KeyPosition, NgramStat, FingerLabel } from '@typsy/shared';
 import KeyboardVisual from '../components/KeyboardVisual.tsx';
+import PinnedBigramsBar from '../components/PinnedBigramsBar.tsx';
+import PinnedBigramsOverlay from '../components/PinnedBigramsOverlay.tsx';
 import { useKeymapRegistry, useRegisterPageKeymap } from '../lib/keymapContext.tsx';
 import type { Keybinding, Modifier } from '../lib/keymap.ts';
 
@@ -104,6 +106,7 @@ function buildSentence(
   ngramRows: readonly NgramStat[],
   recent?: ReadonlySet<string>,
   pinned?: ReadonlySet<string>,
+  pinnedBigrams?: ReadonlySet<string>,
 ): string {
   if (unlocked.size === 0) {
     return 'finish onboarding to start practicing';
@@ -127,6 +130,7 @@ function buildSentence(
   return generateFlowLine({
     allowed: unlocked,
     mustInclude: pinned,
+    mustIncludeBigrams: pinnedBigrams,
     userIndex,
     numWords: 50,
     recent,
@@ -201,6 +205,20 @@ export default function PracticePage(): JSX.Element {
     [pinnedKeys],
   );
 
+  const pinnedBigrams = useMemo<string[]>(() => {
+    if (!activeProgress) return [];
+    try {
+      return JSON.parse(activeProgress.pinned_bigrams_json || '[]') as string[];
+    } catch {
+      return [];
+    }
+  }, [activeProgress]);
+
+  const pinnedBigramsSet = useMemo<Set<string>>(
+    () => new Set(pinnedBigrams),
+    [pinnedBigrams],
+  );
+
   const posFingerMap = useMemo<Record<string, FingerLabel>>(() => {
     if (!userData) return {};
     try {
@@ -258,6 +276,11 @@ export default function PracticePage(): JSX.Element {
   const pinnedKey = useMemo(
     () => [...pinnedKeys].sort().join(','),
     [pinnedKeys],
+  );
+
+  const pinnedBigramsKey = useMemo(
+    () => [...pinnedBigrams].sort().join(','),
+    [pinnedBigrams],
   );
 
   // ─── Manual unlock/lock controls ─────────────────────────────────────────
@@ -337,6 +360,36 @@ export default function PracticePage(): JSX.Element {
     [activeProgress, pinnedKeys, pinnedSet, queryClient],
   );
 
+  const persistPinnedBigrams = useCallback(
+    async (next: readonly string[]) => {
+      if (!activeProgress) return;
+      await postProgressUpdate({
+        layout_id: activeProgress.layout_id,
+        pinned_bigrams_json: JSON.stringify(next),
+      });
+      void queryClient.invalidateQueries({ queryKey: ['user'] });
+    },
+    [activeProgress, queryClient],
+  );
+
+  const handleAddBigram = useCallback(
+    (bg: string) => {
+      if (pinnedBigramsSet.has(bg)) return;
+      void persistPinnedBigrams([...pinnedBigrams, bg]);
+    },
+    [pinnedBigrams, pinnedBigramsSet, persistPinnedBigrams],
+  );
+
+  const handleRemoveBigram = useCallback(
+    (bg: string) => {
+      if (!pinnedBigramsSet.has(bg)) return;
+      void persistPinnedBigrams(pinnedBigrams.filter((b) => b !== bg));
+    },
+    [pinnedBigrams, pinnedBigramsSet, persistPinnedBigrams],
+  );
+
+  const [bigramOverlayOpen, setBigramOverlayOpen] = useState(false);
+
   // ─── Session state ───────────────────────────────────────────────────────
   const [sentence, setSentence] = useState('');
   const [charData, setCharData] = useState<CharData[]>([]);
@@ -390,8 +443,8 @@ export default function PracticePage(): JSX.Element {
   }, []);
 
   const getCacheKey = useCallback((): string => {
-    return `${activeProgress?.layout_id ?? 'none'}|${unlockedKey}|${pinnedKey}|${ngramRows ? 'ready' : 'none'}`;
-  }, [activeProgress?.layout_id, unlockedKey, pinnedKey, ngramRows]);
+    return `${activeProgress?.layout_id ?? 'none'}|${unlockedKey}|${pinnedKey}|${pinnedBigramsKey}|${ngramRows ? 'ready' : 'none'}`;
+  }, [activeProgress?.layout_id, unlockedKey, pinnedKey, pinnedBigramsKey, ngramRows]);
 
   const buildCachedSentence = useCallback((m: Mode, recentWords: string[]): { sentence: string; recentFlowWords: string[] } => {
     if (!activeProgress || unlockedSet.size === 0 || (ngramRows == null)) {
@@ -400,15 +453,15 @@ export default function PracticePage(): JSX.Element {
 
     const buf = [...recentWords];
     const recent1 = new Set(buf);
-    const s1 = buildSentence(m, unlockedSet, ngramRows, recent1, pinnedSet);
+    const s1 = buildSentence(m, unlockedSet, ngramRows, recent1, pinnedSet, pinnedBigramsSet);
     if (m !== 'drill') pushRecentWords(buf, s1.split(' '));
 
     const recent2 = new Set(buf);
-    const s2 = buildSentence(m, unlockedSet, ngramRows, recent2, pinnedSet);
+    const s2 = buildSentence(m, unlockedSet, ngramRows, recent2, pinnedSet, pinnedBigramsSet);
     if (m !== 'drill') pushRecentWords(buf, s2.split(' '));
 
     return { sentence: s1 + ' ' + s2, recentFlowWords: buf };
-  }, [activeProgress, unlockedSet, pinnedSet, ngramRows, pushRecentWords]);
+  }, [activeProgress, unlockedSet, pinnedSet, pinnedBigramsSet, ngramRows, pushRecentWords]);
 
   const ensureCachedMode = useCallback((m: Mode): { sentence: string; recentFlowWords: string[] } => {
     const key = getCacheKey();
@@ -496,12 +549,12 @@ export default function PracticePage(): JSX.Element {
     if (!sentence && activeProgress && unlockedSet.size > 0 && ngramRows) {
       resetSession();
     }
-  }, [activeProgress, unlockedKey, pinnedKey, ngramRows, sentence, resetSession]);
+  }, [activeProgress, unlockedKey, pinnedKey, pinnedBigramsKey, ngramRows, sentence, resetSession]);
 
   useEffect(() => {
     if (sentence) resetSession();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [unlockedKey, pinnedKey]);
+  }, [unlockedKey, pinnedKey, pinnedBigramsKey]);
 
   useEffect(() => {
     if (!sentence) return;
@@ -555,12 +608,12 @@ export default function PracticePage(): JSX.Element {
   const appendNextChunk = useCallback(() => {
     if (!ngramRows || unlockedSet.size === 0) return;
     const recent = new Set(recentFlowWordsRef.current);
-    const next = buildSentence(mode, unlockedSet, ngramRows, recent, pinnedSet);
+    const next = buildSentence(mode, unlockedSet, ngramRows, recent, pinnedSet, pinnedBigramsSet);
     if (mode !== 'drill') pushRecentWords(recentFlowWordsRef.current, next.split(' '));
     const more = ' ' + next;
     setSentence((prev) => prev + more);
     setCharData((prev) => [...prev, ...initCharData(more)]);
-  }, [mode, unlockedSet, pinnedSet, ngramRows, pushRecentWords]);
+  }, [mode, unlockedSet, pinnedSet, pinnedBigramsSet, ngramRows, pushRecentWords]);
 
   // ─── End session (flush + persist + reset) ───────────────────────────────
   const endSession = useCallback(async () => {
@@ -729,6 +782,14 @@ export default function PracticePage(): JSX.Element {
         modifiers: new Set<Modifier>(['shift']),
         description: 'Unlock all keys',
         handler: () => void handleUnlockAll(),
+      },
+      {
+        id: 'practice.pin-bigrams',
+        code: 'KeyB',
+        modifiers: new Set<Modifier>(['ctrl']),
+        description: 'Pin bigrams (force in every word)',
+        handler: () => setBigramOverlayOpen((v) => !v),
+        allowInInput: true,
       },
     ],
     [endSession, changeMode, mode, handleUnlockNext, handleLockLast, handleUnlockAll],
@@ -985,12 +1046,26 @@ export default function PracticePage(): JSX.Element {
         </div>
       )}
 
+      <PinnedBigramsBar
+        bigrams={pinnedBigrams}
+        onRemove={handleRemoveBigram}
+        onOpen={() => setBigramOverlayOpen(true)}
+      />
+
       {/* Hint line */}
       <p className="mt-6 text-xs text-fg4">
         type freely · <kbd className="kbd">Esc</kbd> end · <kbd className="kbd">Tab</kbd> mode ·{' '}
         <kbd className="kbd">\</kbd> keyboard · <kbd className="kbd">+</kbd>/<kbd className="kbd">−</kbd> unlock · <kbd className="kbd">A</kbd> all ·{' '}
-        <kbd className="kbd">?</kbd> help
+        <kbd className="kbd">Ctrl+B</kbd> pin bigrams · <kbd className="kbd">?</kbd> help
       </p>
+
+      <PinnedBigramsOverlay
+        open={bigramOverlayOpen}
+        bigrams={pinnedBigrams}
+        onAdd={handleAddBigram}
+        onRemove={handleRemoveBigram}
+        onClose={() => setBigramOverlayOpen(false)}
+      />
     </div>
   );
 }
