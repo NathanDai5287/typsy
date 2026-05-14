@@ -7,6 +7,12 @@ export interface FlowOptions {
   allowed: ReadonlySet<string>;
   /** Set of chars that MUST be present in every emitted word. */
   mustInclude?: ReadonlySet<string>;
+  /**
+   * Set of 2-char lowercase bigrams; emitted words must contain at least one
+   * as a contiguous substring. Composes with `mustInclude` via OR — a word
+   * qualifies if it contains ANY required char OR ANY required bigram.
+   */
+  mustIncludeBigrams?: ReadonlySet<string>;
   /** Per-user ngram index for weakness scoring. */
   userIndex: NgramIndex;
   /** Number of words to emit (default 50). */
@@ -355,6 +361,7 @@ function softmaxSample<T>(
 export function generateFlowLine({
   allowed,
   mustInclude,
+  mustIncludeBigrams,
   userIndex,
   numWords = 50,
   temperature = 0.4,
@@ -377,10 +384,19 @@ export function generateFlowLine({
   const rf = Math.max(0, Math.min(1, randomFraction));
 
   let candidates = wordsUsingOnly(allowed, lo);
-  if (mustInclude && mustInclude.size > 0) {
+  const hasMustChars = mustInclude && mustInclude.size > 0;
+  const hasMustBigrams = mustIncludeBigrams && mustIncludeBigrams.size > 0;
+  if (hasMustChars || hasMustBigrams) {
     candidates = candidates.filter(({ word }) => {
-      for (const char of word) {
-        if (mustInclude.has(char)) return true;
+      if (hasMustChars) {
+        for (const char of word) {
+          if (mustInclude!.has(char)) return true;
+        }
+      }
+      if (hasMustBigrams) {
+        for (let i = 0; i < word.length - 1; i++) {
+          if (mustIncludeBigrams!.has(word.slice(i, i + 2))) return true;
+        }
       }
       return false;
     });

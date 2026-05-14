@@ -42,6 +42,7 @@ export interface UserLayoutProgress {
   layout_id: number;
   unlocked_keys_json: string; // JSON string: string[]
   pinned_keys_json: string;   // JSON string: string[]
+  pinned_bigrams_json: string; // JSON string: string[] (each entry is a 2-char lowercase bigram)
   phase: number;
   current_mode: string;
   last_session_at: string | null;
@@ -108,6 +109,7 @@ export interface ProgressUpdatePayload {
   layout_id: number;
   unlocked_keys_json?: string; // JSON string: string[]
   pinned_keys_json?: string;   // JSON string: string[]
+  pinned_bigrams_json?: string; // JSON string: string[] (2-char lowercase)
   current_mode?: string;       // 'drill' | 'flow'
   phase?: number;
   /** Pass true to mark this layout as the user's daily driver (all keys unlocked, no progression). */
