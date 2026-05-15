@@ -183,7 +183,7 @@ export default function DashboardPage(): JSX.Element {
     [ngramRows],
   );
 
-  // Server returns word_times pre-sorted by mean ms DESC. Drop one-shot
+  // Server returns word_times pre-sorted by mean ms/char DESC. Drop one-shot
   // outliers (a single 900 ms attempt would otherwise dominate) and slice the
   // head.
   const topSlowestWords = useMemo<WordTime[]>(
@@ -551,7 +551,7 @@ export default function DashboardPage(): JSX.Element {
             <thead className="text-left text-fg4 text-[10px] uppercase tracking-widest">
               <tr>
                 <th className="py-1 font-normal">word</th>
-                <th className="py-1 font-normal text-right">ms</th>
+                <th className="py-1 font-normal text-right">ms/char</th>
                 <th className="py-1 font-normal text-right">attempts</th>
               </tr>
             </thead>
@@ -560,7 +560,7 @@ export default function DashboardPage(): JSX.Element {
                 <tr key={w.word} className="border-t border-bg4">
                   <td className="py-1 text-fg_h">{w.word}</td>
                   <td className="py-1 text-right tabular-nums text-orange-400">
-                    {(w.hit_time_ms / w.hits).toFixed(0)}
+                    {(w.hit_time_ms / w.hits / w.word.length).toFixed(0)}
                   </td>
                   <td className="py-1 text-right tabular-nums text-fg3">
                     {w.hits}

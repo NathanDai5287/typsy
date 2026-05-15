@@ -225,8 +225,10 @@ router.get('/bigram-word-times', (req, res) => {
 /**
  * GET /api/ngrams/word-times?layout_id=X
  *
- * Returns rows from `word_times` sorted by mean ms (slowest first), so the
- * dashboard's "top 10 slowest words" table can take the head directly.
+ * Returns rows from `word_times` sorted by mean ms **per character**
+ * (slowest first), so the dashboard's "top 10 slowest words" table can
+ * take the head directly. Dividing by LENGTH(word) makes the ranking
+ * length-agnostic — a slow 3-letter word can outrank a fast 10-letter one.
  */
 router.get('/word-times', (req, res) => {
   const db = getDb();
@@ -242,7 +244,7 @@ router.get('/word-times', (req, res) => {
     .prepare(
       `SELECT * FROM word_times
        WHERE user_id = ? AND layout_id = ?
-       ORDER BY (CAST(hit_time_ms AS REAL) / NULLIF(hits, 0)) DESC`,
+       ORDER BY (CAST(hit_time_ms AS REAL) / NULLIF(hits, 0) / LENGTH(word)) DESC`,
     )
     .all(userId, layoutId) as WordTime[];
 
