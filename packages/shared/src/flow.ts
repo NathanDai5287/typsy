@@ -23,8 +23,8 @@ export interface FlowOptions {
    * from the score-based top-K. Random picks are then shuffled together
    * with the scored picks. This breaks the perceived "samey" feel that
    * comes from the score function picking the same handful of weak words
-   * every chunk. Default 0.25 (so a 50-word line carries ~13 random
-   * words and ~37 weakness-targeted ones).
+   * every chunk. Default 0.35 (so a 50-word line carries ~18 random
+   * words and ~32 weakness-targeted ones).
    */
   randomFraction?: number;
   /**
@@ -398,7 +398,7 @@ export function generateFlowLine({
   maxLength = 10,
   recent,
   recentDecay = 0.15,
-  randomFraction = 0.25,
+  randomFraction = 0.35,
   alpha = 1.0,
   beta = 0.5,
   delta = 0.5,
