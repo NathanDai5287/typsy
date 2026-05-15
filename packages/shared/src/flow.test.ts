@@ -506,6 +506,41 @@ describe('generateFlowLine', () => {
     }
   });
 
+  it('weights length buckets by 1/L so shorter words are more frequent', () => {
+    // With equal-time sampling, the count of words in shorter buckets
+    // should be noticeably higher than in longer buckets. Over a large
+    // sample, count(4-letter) / count(10-letter) ≈ 10/4 = 2.5.
+    const allowed = new Set('abcdefghijklmnopqrstuvwxyz'.split(''));
+    const seedRng = (seed: number) => () => {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    };
+    const words: string[] = [];
+    // Generate several batches to get a large sample.
+    for (let s = 0; s < 10; s++) {
+      const line = generateFlowLine({
+        allowed,
+        userIndex: indexNgramStats([]),
+        numWords: 200,
+        rng: seedRng(s * 17 + 3),
+      });
+      words.push(...line.split(' '));
+    }
+    const countByLen = new Map<number, number>();
+    for (const w of words) {
+      const L = w.length;
+      countByLen.set(L, (countByLen.get(L) ?? 0) + 1);
+    }
+    const count4 = countByLen.get(4) ?? 0;
+    const count10 = countByLen.get(10) ?? 0;
+    // 4-letter words should appear substantially more than 10-letter words.
+    // Theoretical ratio is 10/4 = 2.5; we accept anything above 1.5 to
+    // allow for statistical noise and bucket availability.
+    expect(count4).toBeGreaterThan(0);
+    expect(count10).toBeGreaterThan(0);
+    expect(count4 / count10).toBeGreaterThan(1.5);
+  });
+
   it('composes mustInclude chars and mustIncludeBigrams via OR', () => {
     // A word qualifies if it contains a pinned char OR a pinned bigram.
     // With `q` pinned and `sh` pinned, every emitted word should satisfy

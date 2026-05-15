@@ -324,6 +324,34 @@ function softmaxSample<T>(
 }
 
 /**
+ * Pick a random length from `lengths`, weighted by 1/L so that the
+ * expected typing time (proportional to word length) is equal across
+ * all length buckets.
+ */
+function weightedLengthPick(
+  lengths: readonly number[],
+  cdf: readonly number[],
+  rng: () => number,
+): number {
+  const r = rng() * cdf[cdf.length - 1];
+  for (let i = 0; i < cdf.length; i++) {
+    if (r <= cdf[i]) return lengths[i];
+  }
+  return lengths[lengths.length - 1];
+}
+
+/** Build a cumulative distribution where each length L has weight 1/L. */
+function buildLengthCdf(lengths: readonly number[]): number[] {
+  const cdf: number[] = [];
+  let cumulative = 0;
+  for (const L of lengths) {
+    cumulative += 1 / L;
+    cdf.push(cumulative);
+  }
+  return cdf;
+}
+
+/**
  * Generate a flow-mode practice line: real English words composed of
  * unlocked letters, with **length-stratified weakness sampling** plus
  * a configurable injection of pure-random words.
@@ -453,6 +481,11 @@ export function generateFlowLine({
   const randomLengths = Array.from(fullByLength.keys());
   if (scoredLengths.length === 0 && randomLengths.length === 0) return '';
 
+  // Weight each length bucket by 1/L so that the expected typing time
+  // (proportional to word length) is roughly equal across buckets.
+  const scoredCdf = buildLengthCdf(scoredLengths);
+  const randomCdf = buildLengthCdf(randomLengths);
+
   // Per-call emit-count map (seeded from `recent`). Each emit of a word
   // multiplies its weight by `recentDecay`, so within a single call we
   // cycle through variety rather than spamming the top scorer.
@@ -468,7 +501,7 @@ export function generateFlowLine({
 
   for (let i = 0; i < numScored; i++) {
     if (scoredLengths.length === 0) break;
-    const L = scoredLengths[Math.floor(rng() * scoredLengths.length)];
+    const L = weightedLengthPick(scoredLengths, scoredCdf, rng);
     const pool = poolByLength.get(L)!;
     const items = pool.map((p) => p.word);
     const weights = pool.map((p) => {
@@ -481,7 +514,7 @@ export function generateFlowLine({
   }
 
   for (let i = 0; i < numRandom; i++) {
-    const L = randomLengths[Math.floor(rng() * randomLengths.length)];
+    const L = weightedLengthPick(randomLengths, randomCdf, rng);
     const pool = fullByLength.get(L)!;
     const weights = pool.map((w) => {
       const c = emitCount.get(w) ?? 0;
